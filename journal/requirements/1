@@ -1,0 +1,91 @@
+# BOMBERMP - A 2D Multiplayer Browser based Bomber Game
+
+## Goals:
+
+- Create a realtime 2d multiplayer bomber game:
+  
+  - requiements: 
+    - base game logic:
+      - world will be a 2d maze like with different types of walls and obstacles
+      - player will be able to move around the world
+      - player will be able to drop bombs
+      - bombs will be able to explode in some time
+      - some walls/obstacles will be able to be destroyed by bombs
+      - think of it like a pacman world but with breakable/unbreakable walls and bombs
+      - walls/obstacles will have a drop rate of items
+      - items will be able to be picked up by the player
+      - items will be able to be used by the player
+      - some items will be able to be destroyed by bombs
+    
+    - loot/drops system:
+      - items will be able to be dropped by the player
+      - items will be able to be picked up by the player
+      - items will be able to be used by the player
+      - some items will be able to be destroyed by bombs
+      - types: 
+        - pickables: 
+          - max bomb additions
+          - bomb damage radius 
+        - traps/effects:
+          - speed slowdown
+
+    - gameplay:
+      - player will join a game
+      - player start to drop bombs
+      - player starts to destroy walls/obstacles 
+      - player starts to pick up items
+      - player will be faced with other players/bots
+
+
+     - singleplayer/multiplayer:
+       - currently no singleplayer
+       - only room based multiplayer
+       - once a player joins they can create or join a room:
+          - creation: 
+            - player will be able to create a room
+            - will get a room id / joining link
+          - joining:
+            - player will be able to join a room by entering the joining link/room id
+            - or opening the room directly with the room link
+      - max of 4 players per room
+      - they can see each other in lobby
+      - creator will be able to start the game when they want
+      - all the players will have differnt colors based on the lobby
+
+      - game start:
+        - all player will be spawned in all corners of the room with drop rate of 1 bombs per 3 seconds
+        - all player will be able to see each other
+        - as per the game logic:
+          - player must kill other players to win
+        - once a single player is left the game will be over
+        - basically last standing player wins
+        - once game ends all players will again come back to the lobby
+
+     
+    - technical requiremetns:
+      - gameplay should be smooth and realtime
+      - currently we are only deployting this to once single region (asia-south1)
+      - we will be using google cloud instances to deploy this game.
+      - we will persist the users using adding a cookie to the user's browser
+      - currently we are not adding any authentication
+      - we will be using a websocket to communicate between the server and the client
+      - for db we will be using mongodb on local docker or atlas      
+      - stack: 
+        - db: mongodb
+        - server: nodejs, typescript, express, socket.io
+        - client: typescript, html, html canvas, css, javascript, socket.io
+        - deploy: google cloud
+        - package manager: pnpm
+        - domain: bombermb.avinashjha.space
+      - structure:
+        - single monorepo for 
+          - server
+          - client
+          - shared types, models, and utils for server 
+      - deployement:
+        - frontend will be in the nginx server in docker container: https://bombermb.avinashjha.space
+        - backend will be in another container proxied by nginx container at: https://bombermbapi.avinashjha.space or wss://bombermbapi.avinashjha.space
+
+    - other requiremetns:
+      - user should be able to see the stats of network latency of thier and others
+      - higher latency should be shown properly
