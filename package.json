@@ -1,0 +1,21 @@
+{
+  "name": "bombermp",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --names shared,server,client --prefix-colors cyan,yellow,green \"pnpm --filter @bombermp/shared dev\" \"pnpm --filter @bombermp/server dev\" \"pnpm --filter @bombermp/client dev\"",
+    "build": "pnpm --filter @bombermp/shared build && pnpm --filter @bombermp/server build && pnpm --filter @bombermp/client build",
+    "typecheck": "pnpm --filter @bombermp/shared typecheck && pnpm --filter @bombermp/server typecheck && pnpm --filter @bombermp/client typecheck",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "echo \"No tests yet\""
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  }
+}

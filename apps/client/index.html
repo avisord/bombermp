@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BomberMP</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background-color: #1a1a2e;
+        color: #eaeaea;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        overflow: hidden;
+      }
+
+      #game-canvas {
+        display: none;
+        image-rendering: pixelated;
+      }
+
+      #ui-root {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      #ui-root h1 {
+        font-size: 3rem;
+        letter-spacing: 0.1em;
+        color: #f5a623;
+      }
+
+      #ui-root p {
+        color: #aaa;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+    <div id="ui-root">
+      <h1>BomberMP</h1>
+      <p>Connecting…</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
