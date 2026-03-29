@@ -1,0 +1,161 @@
+# Session 1 — Project Planning & Setup
+
+Date: 2026-03-29
+
+---
+
+## What Was Done
+
+### 1. CLAUDE.md Created
+Full project specification written to `/CLAUDE.md` covering:
+- Project overview and live domains
+- Monorepo directory structure
+- Tech stack table
+- All pnpm dev commands
+- Architecture (server-authoritative tick loop, room lifecycle FSM)
+- Game mechanics (grid tiles, bomb fuse/chain/blast, power-ups, traps)
+- Socket.io event reference (client→server and server→client)
+- Latency display spec (color-coded RTT per player)
+- MongoDB collections schema
+- Deployment spec (Docker + Nginx + GCloud asia-south1)
+- 6-phase implementation plan
+- Code style conventions
+
+### 2. Skills Installed (global)
+
+| Skill | Installs | Purpose |
+|-------|----------|---------|
+| `github/awesome-copilot@game-engine` | 8K | Game loop, state machines, Canvas rendering patterns |
+| `wshobson/agents@monorepo-management` | 5.4K | pnpm workspaces, cross-package build coordination |
+| `hoodini/ai-agents-skills@mongodb` | 803 | Mongoose schemas, query patterns, indexing |
+| `bobmatnyc/claude-mpm-skills@nodejs-backend-typescript` | 504 | Node.js + TypeScript strict backend patterns |
+| `pluginagentmarketplace/custom-plugin-nodejs@docker-deployment` | 248 | Dockerfiles, Nginx reverse proxy, GCloud deploy |
+| `404kidwiz/claude-supercode-skills@websocket-engineer` | 122 | Socket.io rooms, namespaces, real-time event design |
+
+All passed security scans (0 socket alerts, low/safe risk ratings).
+
+---
+
+## Implementation Plan (6 Phases)
+
+### Phase 1 — Monorepo Scaffold
+- Init pnpm workspace root with `pnpm-workspace.yaml`
+- Create `apps/server`, `apps/client`, `packages/shared` directories
+- Configure TypeScript (strict mode, path aliases, project references across packages)
+- Set up ESLint + Prettier (shared config)
+- Set up Vite for client bundle
+- Configure concurrent dev runner at root (`pnpm dev` runs all packages)
+
+### Phase 2 — Shared Package (`packages/shared`)
+- TypeScript types: `Player`, `Room`, `Bomb`, `Item`, `GameState`, `Tile`, all socket event payload interfaces
+- Game constants: grid dimensions (15×13), tick rate (20 TPS), bomb fuse (3s), default blast radius (1), item drop rates
+- Pure utility functions: grid position helpers, explosion spread calculator, collision detection
+
+### Phase 3 — Server Core (`apps/server`)
+- Express app with CORS, cookie-parser, helmet
+- MongoDB connection + Mongoose models (players, rooms, game_sessions)
+- Room manager — in-memory Map, create/join/leave/destroy lifecycle
+- Socket.io integration: connect, disconnect, room events, input events
+- Game engine: fixed tick loop, input queue processing, bomb placement + timer, explosion propagation (4 directions, chain detonation), item drop on soft wall destroy, player death detection
+- Player identity via UUID cookie (`player_id`)
+- Latency ping/pong handler
+
+### Phase 4 — Client Core (`apps/client`)
+- `index.html` + Canvas element setup
+- Socket.io client connection with auto-reconnect
+- Lobby UI: create room form, join by room ID form, room ID display/copy
+- Waiting room UI: player list with colors, "Start Game" button for creator
+- Canvas renderer:
+  - Grid (tile colors per type)
+  - Players (unique color per lobby slot, name label above)
+  - Bombs (fuse animation)
+  - Explosions (flash effect)
+  - Items on floor
+  - HUD (bomb count, blast radius, latency badge)
+- Input handler: WASD / arrow keys for movement, Space for bomb drop
+- Latency measurement: ping every 2s, display RTT color-coded (green <80ms, yellow <200ms, red ≥200ms)
+
+### Phase 5 — Game Loop Integration
+- Full flow: lobby → 3s countdown → in-game → game over screen → back to lobby
+- Client-side movement interpolation for smooth rendering between server ticks
+- Bomb countdown visual (shrinking indicator)
+- Death animation + player removal
+- Winner announcement overlay
+
+### Phase 6 — Polish & Deployment
+- Responsive canvas scaling (window resize handler)
+- `docker/docker-compose.yml` for local dev stack (server + client + mongodb)
+- `apps/server/Dockerfile` — Node.js multi-stage build
+- `apps/client/Dockerfile` — Vite build → Nginx static serve
+- `docker/nginx/nginx.conf` — reverse proxy, TLS termination, WebSocket upgrade headers
+- Google Cloud deployment (asia-south1): container registry push, Cloud Run or GCE config
+- Environment variable documentation
+
+---
+
+## Key Architecture Decisions (Rationale)
+
+| Decision | Rationale |
+|----------|-----------|
+| Server-authoritative game loop | Prevents cheating; single source of truth for all physics |
+| Raw HTML Canvas (no Phaser/Pixi) | Lean bundle, full rendering control, no framework overhead |
+| Incremental state diffs each tick | Reduces WebSocket bandwidth vs sending full state |
+| UUID cookie identity | Zero-friction player identity, no registration required |
+| In-memory room state | Rooms are ephemeral; avoiding DB writes mid-game keeps latency low |
+| Shared `packages/shared` | Single source of truth for types/constants prevents client-server drift |
+| pnpm workspaces monorepo | Single repo, shared tooling, easy cross-package imports |
+
+---
+
+## Socket Event Reference
+
+### Client → Server
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `room:create` | `{ displayName }` | Create a new room, receive roomId back |
+| `room:join` | `{ roomId, displayName }` | Join existing room by ID |
+| `room:start` | — | Creator starts the game (min 2 players, or solo for dev) |
+| `player:input` | `{ dir: 'up'|'down'|'left'|'right'|null, action: 'bomb'|null }` | Movement + bomb drop |
+| `room:leave` | — | Graceful disconnect from room |
+| `latency:ping` | `{ clientTime: number }` | Sent every 2s for RTT measurement |
+
+### Server → Client
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `room:state` | `RoomState` | Full room state snapshot on join |
+| `room:update` | `Partial<RoomState>` | Lobby changes (player joined/left, status) |
+| `game:tick` | `GameStateDiff` | Incremental game state diff at 20 TPS |
+| `game:countdown` | `{ seconds: number }` | Pre-game countdown |
+| `game:over` | `{ winnerId: string \| null }` | Game ended (null = draw) |
+| `latency:pong` | `{ clientTime: number }` | Echo for RTT calculation |
+| `error` | `{ code: string, message: string }` | Error feedback to client |
+
+---
+
+## Game Constants (to be defined in `packages/shared/src/constants/game.ts`)
+
+```
+GRID_WIDTH = 15
+GRID_HEIGHT = 13
+TILE_SIZE = 48          // px on canvas
+TICK_RATE = 20          // ticks per second
+BOMB_FUSE_MS = 3000     // ms until detonation
+EXPLOSION_DURATION_MS = 500
+DEFAULT_BLAST_RADIUS = 1
+DEFAULT_MAX_BOMBS = 1
+PLAYER_SPEED = 3        // tiles per second
+BOMB_REGEN_MS = 3000    // ms to regain a bomb after detonation
+SOFT_WALL_DROP_RATE = 0.3   // 30% chance to drop an item
+SPEED_DOWN_DURATION_MS = 5000
+SPEED_DOWN_MULTIPLIER = 0.7
+```
+
+---
+
+## Next Session: Phase 1 — Monorepo Scaffold
+
+Start with:
+1. `pnpm-workspace.yaml` + root `package.json`
+2. `packages/shared` — TypeScript types first
+3. `apps/server` — bare Express + Socket.io
+4. `apps/client` — bare Vite + Canvas
