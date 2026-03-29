@@ -37,6 +37,8 @@ interface ServerPlayer extends Player {
   socketId: string;
   pendingDir: Direction | null;
   pendingBomb: boolean;
+  /** Bomb IDs still passable for this player (not yet fully walked off). */
+  passableBombs: Set<string>;
 }
 
 export interface PlayerSlot {
@@ -84,6 +86,7 @@ export class GameEngine {
         socketId: slot.socketId,
         pendingDir: null,
         pendingBomb: false,
+        passableBombs: new Set(),
       };
       this.serverPlayers.set(slot.playerId, sp);
       players[slot.playerId] = this.toSharedPlayer(sp);
@@ -207,21 +210,44 @@ export class GameEngine {
     const newX = sp.pixelX + dx * delta;
     const newY = sp.pixelY + dy * delta;
 
-    // Allow the player to pass through their own bomb tile while they're still on it
-    const ownBombX = Math.round(sp.pixelX);
-    const ownBombY = Math.round(sp.pixelY);
+    const passableIndices = this.buildPassableIndices(sp);
 
-    const canMoveXY = !this.collidesWithGrid(newX, newY, ownBombX, ownBombY);
-    const canMoveX  = !this.collidesWithGrid(newX, sp.pixelY, ownBombX, ownBombY);
-    const canMoveY  = !this.collidesWithGrid(sp.pixelX, newY, ownBombX, ownBombY);
-
-    if (canMoveXY) {
+    if (!this.collidesWithGrid(newX, newY, passableIndices)) {
+      // Direct movement clears — take it.
       sp.pixelX = newX;
       sp.pixelY = newY;
-    } else if (canMoveX) {
-      sp.pixelX = newX;
-    } else if (canMoveY) {
-      sp.pixelY = newY;
+    } else if (dx !== 0) {
+      // Horizontal movement blocked.
+      // Classic Bomberman corner-rounding: if the block is caused by the hitbox
+      // clipping into the row above/below (perpendicular misalignment), nudge Y
+      // toward the nearest row centre so the player can slide through corridors.
+      const targetY = Math.round(sp.pixelY);
+      const yDiff   = targetY - sp.pixelY;
+      if (Math.abs(yDiff) > 0.001) {
+        const nudgedY = sp.pixelY + Math.sign(yDiff) * Math.min(Math.abs(yDiff), delta);
+        if (!this.collidesWithGrid(newX, nudgedY, passableIndices)) {
+          // Nudge + horizontal both fit — apply both.
+          sp.pixelX = newX;
+          sp.pixelY = nudgedY;
+        } else if (!this.collidesWithGrid(sp.pixelX, nudgedY, passableIndices)) {
+          // Horizontal still blocked after nudge (real wall ahead), but the nudge
+          // itself is safe — at least align Y so the next tick can try again.
+          sp.pixelY = nudgedY;
+        }
+      }
+    } else if (dy !== 0) {
+      // Vertical movement blocked — same logic for X misalignment.
+      const targetX = Math.round(sp.pixelX);
+      const xDiff   = targetX - sp.pixelX;
+      if (Math.abs(xDiff) > 0.001) {
+        const nudgedX = sp.pixelX + Math.sign(xDiff) * Math.min(Math.abs(xDiff), delta);
+        if (!this.collidesWithGrid(nudgedX, newY, passableIndices)) {
+          sp.pixelX = nudgedX;
+          sp.pixelY = newY;
+        } else if (!this.collidesWithGrid(nudgedX, sp.pixelY, passableIndices)) {
+          sp.pixelX = nudgedX;
+        }
+      }
     }
 
     sp.position.x = Math.round(sp.pixelX);
@@ -234,14 +260,58 @@ export class GameEngine {
       statePlayer.position.x = sp.position.x;
       statePlayer.position.y = sp.position.y;
     }
+
+    // Promote any passable bomb to solid once ALL four hitbox corners have left its tile.
+    for (const bombId of [...sp.passableBombs]) {
+      const bomb = this.state.bombs[bombId];
+      if (!bomb) {
+        sp.passableBombs.delete(bombId);
+        continue;
+      }
+      if (!this.hitboxOverlapsTile(sp.pixelX, sp.pixelY, bomb.position.x, bomb.position.y)) {
+        sp.passableBombs.delete(bombId);
+      }
+    }
+  }
+
+  /**
+   * Returns the set of flat grid indices for bombs that are still passable for
+   * the given player, pruning any bomb IDs that no longer exist in state.
+   */
+  private buildPassableIndices(sp: ServerPlayer): Set<number> {
+    const indices = new Set<number>();
+    for (const bombId of [...sp.passableBombs]) {
+      const bomb = this.state.bombs[bombId];
+      if (!bomb) { sp.passableBombs.delete(bombId); continue; }
+      indices.add(toIndex(bomb.position.x, bomb.position.y));
+    }
+    return indices;
+  }
+
+  /**
+   * Returns true if at least one hitbox corner of the player at (px, py)
+   * rounds to the tile at (tx, ty).  Used to determine when a player has
+   * fully walked off a bomb tile.
+   */
+  private hitboxOverlapsTile(px: number, py: number, tx: number, ty: number): boolean {
+    const corners: [number, number][] = [
+      [px - HALF, py - HALF],
+      [px + HALF, py - HALF],
+      [px - HALF, py + HALF],
+      [px + HALF, py + HALF],
+    ];
+    for (const [cx, cy] of corners) {
+      if (Math.round(cx) === tx && Math.round(cy) === ty) return true;
+    }
+    return false;
   }
 
   /**
    * AABB collision check.
-   * skipX/skipY: the player's current tile — BOMB tiles there are passable
-   * (allows the player to walk away from a bomb they just placed).
+   * passableIndices: flat grid indices of bomb tiles that are still passable
+   * for the moving player (they haven't fully walked off yet).
    */
-  private collidesWithGrid(cx: number, cy: number, skipX: number, skipY: number): boolean {
+  private collidesWithGrid(cx: number, cy: number, passableIndices: Set<number>): boolean {
     const corners: [number, number][] = [
       [cx - HALF, cy - HALF],
       [cx + HALF, cy - HALF],
@@ -253,7 +323,7 @@ export class GameEngine {
       const ty = Math.round(cornerY);
       const tile = getTile(this.state.grid, tx, ty);
       if (tile === TileType.WALL_HARD || tile === TileType.WALL_SOFT) return true;
-      if (tile === TileType.BOMB && !(tx === skipX && ty === skipY)) return true;
+      if (tile === TileType.BOMB && !passableIndices.has(toIndex(tx, ty))) return true;
     }
     return false;
   }
@@ -279,6 +349,7 @@ export class GameEngine {
     };
 
     sp.activeBombs++;
+    sp.passableBombs.add(bomb.id);
     this.state.bombs[bomb.id] = bomb;
     this.state.grid[toIndex(tx, ty)] = TileType.BOMB;
 
