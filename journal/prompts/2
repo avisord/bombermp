@@ -1,0 +1,10 @@
+features:
+  - add entire game to save feature 
+  - every game played will be saved in a file in the server
+  - those who were playing the game will be able to see the games they were playing
+  - the games will be saved in a file in the server (in future s3)
+  - user states will be saved in db:
+    - attribtues to be saved:
+      - time played
+      - total kills
+      - total deaths

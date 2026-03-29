@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
@@ -9,6 +10,8 @@ import type {
   ServerToClientEvents,
   SocketData,
 } from '@bombermp/shared';
+import { connectDB, disconnectDB } from './db/connection.js';
+import { registerHandlers } from './sockets/handlers.js';
 
 const PORT = process.env['PORT'] ? Number(process.env['PORT']) : 3001;
 const CLIENT_ORIGIN = process.env['CLIENT_ORIGIN'] ?? 'http://localhost:5173';
@@ -36,22 +39,34 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
   },
 );
 
-// ─── Socket Events ────────────────────────────────────────────────────────────
+// ─── Socket handlers ──────────────────────────────────────────────────────────
 
-io.on('connection', (socket) => {
-  console.log(`[socket] connected: ${socket.id}`);
-
-  socket.on('latency:ping', ({ clientTime }) => {
-    socket.emit('latency:pong', { clientTime, serverTime: Date.now() });
-  });
-
-  socket.on('disconnect', (reason) => {
-    console.log(`[socket] disconnected: ${socket.id} — ${reason}`);
-  });
-});
+registerHandlers(io);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-httpServer.listen(PORT, () => {
-  console.log(`[server] listening on http://localhost:${PORT}`);
-});
+async function start(): Promise<void> {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('[db] connection failed, running without DB:', err);
+  }
+
+  httpServer.listen(PORT, () => {
+    console.log(`[server] listening on http://localhost:${PORT}`);
+  });
+}
+
+void start();
+
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
+
+async function shutdown(): Promise<void> {
+  console.log('[server] shutting down…');
+  httpServer.close();
+  await disconnectDB();
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => { void shutdown(); });
+process.on('SIGINT',  () => { void shutdown(); });

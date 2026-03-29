@@ -34,26 +34,14 @@
         flex-direction: column;
         align-items: center;
         gap: 1rem;
-      }
-
-      #ui-root h1 {
-        font-size: 3rem;
-        letter-spacing: 0.1em;
-        color: #f5a623;
-      }
-
-      #ui-root p {
-        color: #aaa;
-        font-size: 0.9rem;
+        max-width: 480px;
+        width: 100%;
       }
     </style>
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
-    <div id="ui-root">
-      <h1>BomberMP</h1>
-      <p>Connecting…</p>
-    </div>
+    <div id="ui-root"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

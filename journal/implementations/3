@@ -1,0 +1,173 @@
+# Session 3 — Phase 3: Server Core
+
+Date: 2026-03-30
+
+---
+
+## What Was Done
+
+Full server-side game engine implemented. Server is now playable end-to-end
+(room create/join, countdown, game loop, bomb/explosion/items, win condition,
+MongoDB persistence).
+
+---
+
+## Files Created / Modified
+
+### `packages/shared`
+
+| File | Change |
+|------|--------|
+| `src/utils/explosions.ts` | New — pure `calculateExplosionTiles(grid, center, radius)` |
+| `src/index.ts` | Added `export * from './utils/explosions.js'` |
+
+### `apps/server/src`
+
+| File | Purpose |
+|------|---------|
+| `db/connection.ts` | `connectDB`/`disconnectDB`; `serverSelectionTimeoutMS: 3000` so server starts even without MongoDB |
+| `db/models/Player.ts` | Mongoose model `{ _id: UUID string, displayName, createdAt, lastSeen }` |
+| `db/models/GameSession.ts` | Mongoose model `{ roomId, startedAt, endedAt, winnerId, playerIds[] }` |
+| `game/mapGenerator.ts` | Bomberman pillar layout: hard walls on perimeter + even-col/even-row interior pillars; random soft walls outside spawn safe zones |
+| `game/GameEngine.ts` | Full tick loop (see details below) |
+| `rooms/RoomManager.ts` | Room lifecycle FSM (see details below) |
+| `sockets/handlers.ts` | All socket event wiring |
+| `src/index.ts` | Added `import 'dotenv/config'`, `connectDB()`, `registerHandlers(io)`, SIGTERM/SIGINT graceful shutdown |
+
+### `apps/server/package.json`
+
+Added `"dotenv": "^16.4.0"`.
+
+### `docker/docker-compose.dev.yml`
+
+New file — MongoDB only, for running dependencies locally while developing with
+`pnpm dev`. Usage: `docker compose -f docker/docker-compose.dev.yml up -d`
+
+---
+
+## GameEngine Details (`game/GameEngine.ts`)
+
+### Tick loop (50 ms / 20 TPS)
+```
+processInputs → updateBombs → updateExplosions → checkItemPickups
+→ checkWinCondition → computeDiff → onTick(diff)
+→ if winner: stop() + onGameOver(winner)
+```
+
+### Movement
+- Sub-tile positions: `pixelX`, `pixelY` in tile-unit floats
+- `delta = PLAYER_SPEED * speedMultiplier * DT` (~0.15 tiles/tick at full speed)
+- AABB collision with `HALF = 0.45` half-width; corners rounded to nearest tile
+- Slide mechanic: try X+Y → X only → Y only (critical for Bomberman feel)
+- Own-bomb passthrough: player's current rounded tile is exempt from BOMB
+  collision so they can walk away from a just-placed bomb
+
+### Bomb placement
+- Only if `activeBombs < maxBombs` and tile is EMPTY or ITEM
+- Sets grid tile to `TileType.BOMB`; increments `activeBombs`
+
+### Bomb detonation (`detonateBomb`, recursive up to depth 8)
+1. Remove bomb from grid/state, decrement owner's `activeBombs`
+2. `calculateExplosionTiles` → `affectedTiles` + `destroyedSoftWalls`
+3. Destroy soft walls (grid → EMPTY)
+4. Mark all `affectedTiles` as `TileType.EXPLOSION`
+5. Roll item drops for each destroyed soft wall (30% chance, BOMB_UP/FIRE_UP/SPEED_DOWN)
+   — items are tracked in `state.items`; grid tile stays EXPLOSION until it clears
+6. Kill any alive player whose `Math.round(pixelX/Y)` is in explosion set
+7. Chain: collect bomb candidates in explosion set, recurse
+
+### Explosion clear (`updateExplosions`)
+- On expiry (`endsAt`): for each tile, restore to `ITEM` if an item lives there,
+  else `EMPTY`
+
+### Item pickups (`checkItemPickups`)
+- Each tick: check if any alive player's rounded tile matches an item position
+- Effects: `BOMB_UP` +1 maxBombs, `FIRE_UP` +1 blastRadius,
+  `SPEED_DOWN` → 0.7× speed for 5 s
+
+### Win condition
+- Solo (1 player total): game over when player dies
+- Multiplayer: game over when ≤ 1 alive; winner is last survivor or null (draw)
+
+### State diff (`computeDiff`)
+- Grid: element-wise compare vs `prevState`; emit only changed indices
+- Players: field-by-field compare; emit only changed `Partial<Player>` (omitted
+  fields not set to `undefined` — `exactOptionalPropertyTypes` compliant)
+- Bombs/explosions/items: new keys vs prevState + removed keys
+
+---
+
+## RoomManager Details (`rooms/RoomManager.ts`)
+
+### Lifecycle FSM
+```
+WAITING → (room:start) → STARTING [3 s countdown]
+        → IN_GAME [tick loop running]
+        → GAME_OVER [3 s] → WAITING
+```
+
+### Key behaviours
+- Room ID: 8-char uppercase UUID prefix (e.g. `A3F9C12B`)
+- Spawn index assignment: first available slot 0–3 (corners)
+- Creator transfer: if creator leaves, next player in map becomes creator
+- Room destroyed when last player leaves (countdown cancelled, engine stopped)
+- DB writes are fire-and-forget; server continues even if MongoDB is down
+- `queueInput` is the only hot-path method — no try/catch, no DB access
+
+---
+
+## Sockets (`sockets/handlers.ts`)
+
+| Event | Notes |
+|-------|-------|
+| connection | Validates UUID from `socket.handshake.auth.playerId`; disconnects if invalid |
+| `room:create` | Creates room, joins socket.io room, emits `room:state` to creator only |
+| `room:join` | Joins room, `await socket.join()`, broadcasts updated `room:state` to all |
+| `room:start` | Delegates to `RoomManager.startGame`; broadcasts `room:state` (STARTING) then after countdown `room:state` (IN_GAME) |
+| `player:input` | Hot path — no try/catch; delegates to `RoomManager.queueInput` |
+| `room:leave` | Leaves socket.io room + calls `RoomManager.leaveRoom` |
+| `latency:ping` | Echoes `clientTime` + `serverTime` |
+| disconnect | Same as `room:leave` for any active room |
+
+Player upsert to MongoDB (`displayName` + `lastSeen`) happens on `room:create`
+and `room:join` when display name is available.
+
+---
+
+## TypeScript Strict Mode Notes
+
+- `noUncheckedIndexedAccess`: all array reads checked for `undefined` before use;
+  `SPAWN_POSITIONS[slot.spawnIndex] ?? { x: 1, y: 1 }` for variable index
+- `exactOptionalPropertyTypes`: diff fields are only assigned when present (never
+  set to `undefined`); `speedDebuffUntil` assigned `number | null` directly
+- `noPropertyAccessFromIndexSignature`: all `Record<string, T>` accessed via
+  bracket notation
+- `delete` on object keys uses `// eslint-disable-next-line @typescript-eslint/no-dynamic-delete`
+  to suppress the lint warning on intentional dynamic deletes
+
+---
+
+## Dev Workflow
+
+```bash
+# Start MongoDB
+docker compose -f docker/docker-compose.dev.yml up -d
+
+# Start everything
+pnpm dev
+```
+
+Server falls back gracefully if MongoDB is unreachable (3 s timeout, logs error,
+continues without DB — room/game state is fully in-memory).
+
+---
+
+## Next: Phase 4 — Client Core
+
+- HTML Canvas setup + Vite entry point
+- Socket.io client (sends `playerId` UUID from localStorage as auth)
+- Lobby UI: create room / join by ID
+- Waiting room: player list, Start button for creator
+- Canvas renderer: grid, players, bombs, explosions, items, HUD
+- Input: WASD/arrows + Space
+- Latency display (RTT badge, color-coded)
