@@ -5,3 +5,4 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
+scripts/deploy.env

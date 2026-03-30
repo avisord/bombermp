@@ -1,10 +1,24 @@
 features:
+  - smooth player movement on client side, it should not be jerky or laggy
+
+  - no capping on client fps alghough server is runnong on its own tick but client should be able to handle it
+
+  - room/game configuration:
+    - can be changed by the creator of the game in lobby
+    - will be visible to all players in the room in lobby
+    - configuration includes:
+      - player speed
+      - intial bomb count
+      - initial bomb explosion radius
+
+  - game should be persisted while running if user refreshes the page if they were playing the game before closing the tab they will be joined back in same room again for this we need this <host>/<room_id/code> page url structure 
+
   - add entire game to save feature 
-  - every game played will be saved in a file in the server
-  - those who were playing the game will be able to see the games they were playing
-  - the games will be saved in a file in the server (in future s3)
-  - user states will be saved in db:
-    - attribtues to be saved:
-      - time played
-      - total kills
-      - total deaths
+    - every game played will be saved in a file in the server
+    - those who were playing the game will be able to see the games they were playing
+    - the games will be saved in a file in the server (in future s3)
+    - user states will be saved in db:
+      - attribtues to be saved:
+        - time played
+        - total kills
+        - total deaths

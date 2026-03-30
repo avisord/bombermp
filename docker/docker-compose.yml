@@ -1,0 +1,49 @@
+services:
+
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      MONGODB_URI: mongodb://mongodb:27017/bombermp
+      CLIENT_ORIGIN: http://localhost
+      COOKIE_SECRET: change-me-in-production
+      NODE_ENV: production
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  client:
+    build:
+      context: ..
+      dockerfile: apps/client/Dockerfile
+      args:
+        VITE_WS_URL: http://localhost:3001
+        VITE_API_URL: http://localhost:3001
+    restart: unless-stopped
+    environment:
+      PORT: "80"
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+
+volumes:
+  mongo_data:
