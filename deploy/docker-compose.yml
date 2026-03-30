@@ -1,0 +1,50 @@
+# Local development — builds images from Dockerfiles.
+# Usage: docker compose -f deploy/docker-compose.yml up --build
+#
+# Does NOT include nginx; hit services directly:
+#   Client : http://localhost:8080
+#   API    : http://localhost:3001
+
+services:
+
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./environments/.env.local
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  client:
+    build:
+      context: ..
+      dockerfile: apps/client/Dockerfile
+      args:
+        VITE_WS_URL: ws://localhost:3001
+        VITE_API_URL: http://localhost:3001
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - server
+
+volumes:
+  mongo_data:

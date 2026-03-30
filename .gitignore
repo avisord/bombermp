@@ -5,4 +5,11 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
-scripts/deploy.env
+
+# ─── Deploy secrets (copy from .example files and fill in) ───────────────────
+deploy/environments/.env.prod
+deploy/environments/.env.stage
+deploy/providers/gcloud/id_rsa
+
+# ─── Build artifacts ──────────────────────────────────────────────────────────
+.tmp/

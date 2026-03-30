@@ -1,0 +1,49 @@
+# Production / Staging — uses pre-built images deployed via deploy/scripts/deploy.sh.
+# Do NOT run directly; the deploy script transfers this file and the env file to the remote.
+#
+# The env file is always written to ./environments/.env.server by send.sh,
+# regardless of which environment (prod / stage) is being deployed.
+
+services:
+
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    image: bombermp/server:latest
+    restart: unless-stopped
+    env_file:
+      - ./environments/.env.server
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  client:
+    image: bombermp/client:latest
+    restart: unless-stopped
+    depends_on:
+      - server
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - server
+      - client
+
+volumes:
+  mongo_data:
