@@ -4,19 +4,46 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BomberMP</title>
+
+    <!-- Playful Geometric fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700;800&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
     <style>
-      *,
-      *::before,
-      *::after {
+      /* ── Design tokens ──────────────────────────────────── */
+      :root {
+        --bg:          #FFFDF5;
+        --fg:          #1E293B;
+        --muted:       #F1F5F9;
+        --muted-fg:    #64748B;
+        --accent:      #8B5CF6;
+        --secondary:   #F472B6;
+        --tertiary:    #FBBF24;
+        --quaternary:  #34D399;
+        --border:      #E2E8F0;
+        --border-dark: #1E293B;
+        --card:        #FFFFFF;
+        --font-heading: 'Outfit', system-ui, sans-serif;
+        --font-body:    'Plus Jakarta Sans', system-ui, sans-serif;
+        --ease-bounce:  cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      *, *::before, *::after {
         box-sizing: border-box;
         margin: 0;
         padding: 0;
       }
 
       body {
-        background-color: #1a1a2e;
-        color: #eaeaea;
-        font-family: 'Segoe UI', system-ui, sans-serif;
+        background-color: var(--bg);
+        background-image: radial-gradient(circle, #CBD5E1 1.5px, transparent 1.5px);
+        background-size: 28px 28px;
+        color: var(--fg);
+        font-family: var(--font-body);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -24,24 +51,53 @@
         overflow: hidden;
       }
 
-      #game-canvas {
-        display: none;
-        image-rendering: pixelated;
+      /* ── Game view wrapper (HUD + canvas as one unit) ───── */
+      #game-wrapper {
+        display: none;          /* JS shows/hides this */
+        flex-direction: column;
+        align-items: stretch;
+        border: 2px solid var(--border-dark);
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 6px 6px 0px 0px var(--border-dark);
       }
 
+      #game-canvas {
+        display: block;
+        image-rendering: pixelated;
+        /* Border and shadow handled by #game-wrapper */
+      }
+
+      /* ── Lobby / waiting room UI ────────────────────────── */
       #ui-root {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 1rem;
+        gap: 0.85rem;
         max-width: 480px;
         width: 100%;
+        padding: 1.5rem 1rem;
+        position: relative;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
       }
     </style>
   </head>
   <body>
-    <canvas id="game-canvas"></canvas>
+    <!-- Game view: HUD bar + canvas; hidden until a game starts -->
+    <div id="game-wrapper">
+      <div id="game-hud"></div>
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- Lobby / waiting room screens -->
     <div id="ui-root"></div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
