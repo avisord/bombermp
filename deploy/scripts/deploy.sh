@@ -8,7 +8,7 @@
 #   bash deploy/scripts/deploy.sh --skip-build        # skip build+save steps
 #
 # Prerequisites:
-#   1. deploy/providers/gcloud/id_rsa — SSH private key with access to REMOTE_HOST
+#   1. deploy/ssh-keys/{prod|stage}/id_rsa — SSH private key with access to REMOTE_HOST
 #   2. deploy/environments/.env.{prod|stage} — secrets filled in
 #   3. REMOTE_HOST set in deploy/scripts/config.sh
 #   4. Remote server has Docker + docker compose installed

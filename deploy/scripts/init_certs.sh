@@ -31,20 +31,20 @@ export DEPLOY_ENV="${DEPLOY_ENV:-prod}"
 source "$SCRIPT_DIR/config.sh"
 source "$SCRIPT_DIR/common.sh"
 
-CERTBOT_EMAIL="admin@avinashjha.space"
+CERTBOT_EMAIL="avinash2002a@gmail.com"
 
 # Domains per environment
 case "$ENV" in
   prod)
     DOMAINS=(
-      "bombermb.avinashjha.space"
-      "bombermbapi.avinashjha.space"
+      "bombermp.avinashjha.space"
+      "bombermpapi.avinashjha.space"
     )
     ;;
   stage)
     DOMAINS=(
-      "stage.bombermb.avinashjha.space"
-      "stage.bombermbapi.avinashjha.space"
+      "stage.bombermp.avinashjha.space"
+      "stage.bombermpapi.avinashjha.space"
     )
     ;;
   *)

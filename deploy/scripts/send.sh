@@ -25,6 +25,7 @@ setup_remote_dirs() {
     mkdir -p ${REMOTE_ROOT_DIRECTORY}deploy/configs/nginx
     mkdir -p ${REMOTE_ROOT_DIRECTORY}deploy/environments
     mkdir -p ${REMOTE_ROOT_DIRECTORY}deploy/tars
+    mkdir -p ${REMOTE_ROOT_DIRECTORY}deploy/scripts
   "
 }
 
@@ -64,6 +65,10 @@ transfer_configs() {
   echo "[send] Transferring nginx config…"
   rsync_file "$SERVER" "$REPO_ROOT/deploy/configs/nginx/nginx.conf" \
     "${REMOTE_ROOT_DIRECTORY}deploy/configs/nginx/"
+
+  echo "[send] Essentinal scripts…"
+  rsync_file "$SERVER" "$REPO_ROOT/deploy/scripts/init_certs.sh" \
+    "${REMOTE_ROOT_DIRECTORY}deploy/scripts/"
 
   echo "[send] Transferring docker-compose.image.yml…"
   rsync_file "$SERVER" "$REPO_ROOT/deploy/docker-compose.image.yml" \

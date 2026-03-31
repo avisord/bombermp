@@ -9,7 +9,7 @@ coverage/
 # ─── Deploy secrets (copy from .example files and fill in) ───────────────────
 deploy/environments/.env.prod
 deploy/environments/.env.stage
-deploy/providers/gcloud/id_rsa
+deploy/ssh-keys
 
 # ─── Build artifacts ──────────────────────────────────────────────────────────
 .tmp/

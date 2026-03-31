@@ -16,11 +16,11 @@ ENV="${DEPLOY_ENV:-prod}"
 # ─── Remote server per environment ────────────────────────────────────────────
 case "$ENV" in
   prod)
-    REMOTE_USER="avinash2002a"   # GCE OS Login username
-    REMOTE_HOST=""               # GCE external IP — fill this in
+    REMOTE_USER="avinash2002a"
+    REMOTE_HOST="34.131.250.230"
     ;;
   stage)
-    REMOTE_USER=""
+    REMOTE_USER="avinash2002a"
     REMOTE_HOST=""
     ;;
   local)
@@ -33,8 +33,7 @@ SERVER="${REMOTE_USER}@${REMOTE_HOST}"
 REMOTE_ROOT_DIRECTORY="/home/${REMOTE_USER}/${PROJECT_NAME}/"
 
 # ─── SSH ──────────────────────────────────────────────────────────────────────
-DEPLOYMENT_PROVIDER="gcloud"
-SSH_PRIVATE_KEY_PATH="deploy/providers/gcloud/id_rsa"
+SSH_PRIVATE_KEY_PATH="deploy/ssh-keys/${ENV}/id_rsa"
 
 # ─── Build artifacts ──────────────────────────────────────────────────────────
 TAR_DIR=".tmp/img-tars"
