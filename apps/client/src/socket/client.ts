@@ -19,6 +19,18 @@ export function getOrCreatePlayerId(): string {
   return id;
 }
 
+// ─── Display Name ─────────────────────────────────────────────────────────────
+
+const DISPLAY_NAME_KEY = 'bombermp_display_name';
+
+export function getStoredDisplayName(): string | null {
+  return localStorage.getItem(DISPLAY_NAME_KEY);
+}
+
+export function setStoredDisplayName(name: string): void {
+  localStorage.setItem(DISPLAY_NAME_KEY, name);
+}
+
 // ─── Socket instance ──────────────────────────────────────────────────────────
 
 const WS_URL = (import.meta.env['VITE_WS_URL'] as string | undefined) ?? 'http://localhost:3001';

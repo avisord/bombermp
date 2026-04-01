@@ -19,6 +19,7 @@ interface ServerRoomPlayer {
   displayName: string;
   socketId: string;
   spawnIndex: number;
+  lateJoin: boolean; // joined after game was starting/in-progress
 }
 
 interface ServerRoom {
@@ -54,7 +55,7 @@ export class RoomManager {
       engine: null,
       sessionId: null,
     };
-    room.players.set(playerId, { playerId, displayName, socketId, spawnIndex: 0 });
+    room.players.set(playerId, { playerId, displayName, socketId, spawnIndex: 0, lateJoin: false });
     this.rooms.set(roomId, room);
     return this.toRoomState(room);
   }
@@ -62,11 +63,14 @@ export class RoomManager {
   joinRoom(roomId: string, playerId: string, displayName: string, socketId: string): RoomState {
     const room = this.rooms.get(roomId);
     if (!room) throw new Error('Room not found');
-    if (room.status !== RoomStatus.WAITING) throw new Error('Room is not accepting players');
-    if (room.players.size >= MAX_PLAYERS) throw new Error('Room is full');
+    if (room.status === RoomStatus.GAME_OVER) throw new Error('Room is not accepting players');
+    if (room.players.size >= MAX_PLAYERS && !room.players.has(playerId)) throw new Error('Room is full');
 
-    const spawnIndex = this.assignSpawnIndex(room);
-    room.players.set(playerId, { playerId, displayName, socketId, spawnIndex });
+    const lateJoin = room.status !== RoomStatus.WAITING;
+    const spawnIndex = room.players.has(playerId)
+      ? room.players.get(playerId)!.spawnIndex
+      : this.assignSpawnIndex(room);
+    room.players.set(playerId, { playerId, displayName, socketId, spawnIndex, lateJoin });
     return this.toRoomState(room);
   }
 
@@ -130,20 +134,22 @@ export class RoomManager {
     room.countdownTimer = null;
     room.countdownEndsAt = null;
 
-    if (room.players.size < 1) {
+    const slots: PlayerSlot[] = [...room.players.values()]
+      .filter((p) => !p.lateJoin)
+      .map((p) => ({
+        playerId: p.playerId,
+        displayName: p.displayName,
+        socketId: p.socketId,
+        spawnIndex: p.spawnIndex,
+      }));
+
+    if (slots.length < 1) {
       room.status = RoomStatus.WAITING;
       this.io.to(room.roomId).emit('room:state', this.toRoomState(room));
       return;
     }
 
     room.status = RoomStatus.IN_GAME;
-
-    const slots: PlayerSlot[] = [...room.players.values()].map((p) => ({
-      playerId: p.playerId,
-      displayName: p.displayName,
-      socketId: p.socketId,
-      spawnIndex: p.spawnIndex,
-    }));
 
     room.engine = new GameEngine(
       slots,
@@ -188,6 +194,7 @@ export class RoomManager {
       room.status = RoomStatus.WAITING;
       room.engine = null;
       room.sessionId = null;
+      for (const p of room.players.values()) p.lateJoin = false;
       this.io.to(room.roomId).emit('room:state', this.toRoomState(room));
     }, 3000);
   }

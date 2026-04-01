@@ -7,9 +7,9 @@ features:
     - can be changed by the creator of the game in lobby
     - will be visible to all players in the room in lobby
     - configuration includes:
-      - player speed
-      - intial bomb count
-      - initial bomb explosion radius
+      - player speed: min maxed by server, default should also be set
+      - intial bomb count: min maxed by server, default should also be set
+      - initial bomb explosion radius: min maxed by server, default should also be set
 
   - game should be persisted while running if user refreshes the page if they were playing the game before closing the tab they will be joined back in same room again for this we need this <host>/<room_id/code> page url structure 
 

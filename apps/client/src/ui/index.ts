@@ -27,6 +27,7 @@ export function showLobby(
   root: HTMLElement,
   onCreate: (name: string) => void,
   onJoin: (roomId: string, name: string) => void,
+  prefillRoomId?: string,
 ): void {
   clear(root);
   root.style.display = 'flex';
@@ -132,7 +133,12 @@ export function showLobby(
   joinNameEl.addEventListener('keydown',   (e) => { if (e.key === 'Enter') joinBtn.click(); });
   joinIdEl.addEventListener('keydown',     (e) => { if (e.key === 'Enter') joinBtn.click(); });
 
-  createNameEl.focus();
+  if (prefillRoomId) {
+    joinIdEl.value = prefillRoomId;
+    joinNameEl.focus();
+  } else {
+    createNameEl.focus();
+  }
 }
 
 export function showLobbyError(root: HTMLElement, message: string): void {
@@ -153,6 +159,7 @@ export function showWaitingRoom(
   myPlayerId: string,
   onStart: () => void,
   onLeave: () => void,
+  gameInProgress?: boolean,
 ): void {
   clear(root);
   root.style.display = 'flex';
@@ -182,11 +189,17 @@ export function showWaitingRoom(
     `,
   ).join('');
 
-  const startBtn = amCreator
-    ? `<button class="bmp-btn bmp-btn--primary bmp-btn--sm" id="start-btn" ${isStarting ? 'disabled' : ''}>
-         ${isStarting ? 'Starting…' : 'Start Game <span class="bmp-btn__arrow" aria-hidden="true">→</span>'}
-       </button>`
-    : `<span class="bmp-waiting-hint">Waiting for host…</span>`;
+  const gameInProgressBanner = gameInProgress
+    ? `<div class="bmp-game-banner">🎮 Game in progress — you'll join next round</div>`
+    : '';
+
+  const startBtn = gameInProgress
+    ? ''
+    : amCreator
+      ? `<button class="bmp-btn bmp-btn--primary bmp-btn--sm" id="start-btn" ${isStarting ? 'disabled' : ''}>
+           ${isStarting ? 'Starting…' : 'Start Game <span class="bmp-btn__arrow" aria-hidden="true">→</span>'}
+         </button>`
+      : `<span class="bmp-waiting-hint">Waiting for host…</span>`;
 
   root.innerHTML = `
     <div class="bmp-dec bmp-dec--circle-yellow bmp-dec--sm" aria-hidden="true"></div>
@@ -213,6 +226,7 @@ export function showWaitingRoom(
         </ul>
 
         ${countdownHtml}
+        ${gameInProgressBanner}
 
         <div class="bmp-action-row">
           <button class="bmp-btn bmp-btn--danger bmp-btn--sm" id="leave-btn">Leave</button>
@@ -650,6 +664,21 @@ function injectStyles(): void {
     @keyframes bmp-pop {
       0%   { transform: scale(0.6); }
       100% { transform: scale(1); }
+    }
+
+    /* ── Game-in-progress banner ───────────────────────────────── */
+    .bmp-game-banner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: #FEF3C7;
+      border: 2px solid #FBBF24;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #92400E;
     }
 
     /* ── Action row ────────────────────────────────────────────── */

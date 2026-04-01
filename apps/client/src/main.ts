@@ -6,7 +6,7 @@ import {
   RoomStatus,
 } from '@bombermp/shared';
 import type { RoomState } from '@bombermp/shared';
-import { socket, getOrCreatePlayerId } from './socket/client.js';
+import { socket, getOrCreatePlayerId, getStoredDisplayName, setStoredDisplayName } from './socket/client.js';
 import { ClientGameState } from './game/state.js';
 import { InputHandler } from './game/input.js';
 import { render, clearExplosionTimestamps } from './game/renderer.js';
@@ -52,6 +52,21 @@ const playerSlotMap = new Map<string, number>();
 let rtt            = 0;
 let rafId: number | null = null;
 let lastRoomState: RoomState | null = null;
+
+// ─── Hash utilities ───────────────────────────────────────────────────────────
+
+function setRoomHash(roomId: string): void {
+  history.replaceState(null, '', `#r${roomId}`);
+}
+
+function clearRoomHash(): void {
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+function getRoomIdFromHash(): string | null {
+  const m = window.location.hash.match(/^#r([A-Z0-9]{1,16})$/i);
+  return m ? m[1]!.toUpperCase() : null;
+}
 
 // ─── Game view show / hide ────────────────────────────────────────────────────
 
@@ -99,6 +114,7 @@ function buildSlotMap(roomState: RoomState): void {
 socket.on('room:state', (state: RoomState) => {
   lastRoomState = state;
   buildSlotMap(state);
+  setRoomHash(state.roomId);
 
   switch (state.status) {
     case RoomStatus.WAITING:
@@ -116,6 +132,7 @@ socket.on('room:state', (state: RoomState) => {
         () => socket.emit('room:start'),
         () => {
           socket.emit('room:leave');
+          clearRoomHash();
           showLobby(uiRoot, onCreateRoom, onJoinRoom);
         },
       );
@@ -125,11 +142,31 @@ socket.on('room:state', (state: RoomState) => {
       break;
 
     case RoomStatus.IN_GAME:
-      if (state.gameState) {
+      if (state.gameState && state.gameState.players[myPlayerId]) {
         gameState.init(state.gameState);
         showGameView();
         input.attach(document);
         startRenderLoop();
+      } else {
+        // Rejoined mid-game after refresh — show waiting room as spectator
+        stopRenderLoop();
+        hideGameView();
+        input.detach(document);
+        gameState.reset();
+        clearExplosionTimestamps();
+        showUI(uiRoot);
+        showWaitingRoom(
+          uiRoot,
+          state,
+          myPlayerId,
+          () => socket.emit('room:start'),
+          () => {
+            socket.emit('room:leave');
+            clearRoomHash();
+            showLobby(uiRoot, onCreateRoom, onJoinRoom);
+          },
+          true, // gameInProgress
+        );
       }
       break;
 
@@ -160,6 +197,7 @@ socket.on('latency:pong', ({ clientTime }: { clientTime: number }) => {
 
 socket.on('error', ({ message }: { message: string }) => {
   console.error('[server error]', message);
+  if (getRoomIdFromHash()) clearRoomHash();
   showLobbyError(uiRoot, message);
 });
 
@@ -184,10 +222,12 @@ setInterval(() => {
 // ─── Lobby callbacks ──────────────────────────────────────────────────────────
 
 function onCreateRoom(name: string): void {
+  setStoredDisplayName(name);
   socket.emit('room:create', { displayName: name });
 }
 
 function onJoinRoom(roomId: string, name: string): void {
+  setStoredDisplayName(name);
   socket.emit('room:join', { roomId, displayName: name });
 }
 
@@ -212,5 +252,17 @@ initHUD(gameWrapper);
 // until they arrive so the lobby is never blocked
 void loadSprites();
 
-showLobby(uiRoot, onCreateRoom, onJoinRoom);
+const hashRoomId  = getRoomIdFromHash();
+const storedName  = getStoredDisplayName();
+
+if (hashRoomId && storedName) {
+  socket.once('connect', () => {
+    socket.emit('room:join', { roomId: hashRoomId, displayName: storedName });
+  });
+  showLobby(uiRoot, onCreateRoom, onJoinRoom);
+} else if (hashRoomId) {
+  showLobby(uiRoot, onCreateRoom, onJoinRoom, hashRoomId);
+} else {
+  showLobby(uiRoot, onCreateRoom, onJoinRoom);
+}
 socket.connect();
