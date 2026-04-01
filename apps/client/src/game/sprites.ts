@@ -1,29 +1,10 @@
+import { ASSET_REGISTRY } from '../assets/registry.js';
+
 // ─── Sprite sheet frame configs ───────────────────────────────────────────────
 
-export const BOMB_SHEET = {
-  cols: 5,
-  rows: 3,
-  total: 15,
-  frameW: 1536 / 5, // 307.2
-  frameH: 1024 / 3, // 341.33
-} as const;
-
-export const EXPLOSION_SHEET = {
-  cols: 4,
-  rows: 3,
-  total: 12,
-  frameW: 1536 / 4, // 384
-  frameH: 1024 / 3, // 341.33
-} as const;
-
-// 3 item icons laid out horizontally: [0]=FIRE_UP  [1]=SPEED_DOWN  [2]=BOMB_UP
-export const ITEM_SHEET = {
-  cols: 3,
-  rows: 1,
-  total: 3,
-  frameW: 1536 / 3, // 512
-  frameH: 1024,
-} as const;
+export const BOMB_SHEET      = ASSET_REGISTRY.bombSheet.sheet;
+export const EXPLOSION_SHEET = ASSET_REGISTRY.explosionSheet.sheet;
+export const ITEM_SHEET      = ASSET_REGISTRY.itemSheet.sheet;
 
 // Column index per item type (matches the order in items.png)
 export const ITEM_COL = {
@@ -32,9 +13,8 @@ export const ITEM_COL = {
   BOMB_UP:    2,
 } as const;
 
-// Source crop for wall tile textures (single tile unit from each tileset)
-export const WALL_HARD_CROP = { sx: 0, sy: 0, sw: 190, sh: 190 } as const;
-export const WALL_SOFT_CROP = { sx: 0, sy: 0, sw: 370, sh: 370 } as const;
+export const WALL_HARD_CROP = ASSET_REGISTRY.wallHard.crop;
+export const WALL_SOFT_CROP = ASSET_REGISTRY.wallSoft.crop;
 
 // ─── Sprite registry ──────────────────────────────────────────────────────────
 //
@@ -107,11 +87,11 @@ function removeBlackBackground(img: HTMLImageElement, threshold = 60): HTMLCanva
 
 export async function loadSprites(): Promise<void> {
   const results = await Promise.allSettled([
-    loadImage('/sprites/wall-hard.png'),
-    loadImage('/sprites/wall-soft.png'),
-    loadImage('/sprites/bomb-sheet.png'),
-    loadImage('/sprites/explosion-sheet.png'),
-    loadImage('/sprites/items.png'),
+    loadImage(ASSET_REGISTRY.wallHard.path),
+    loadImage(ASSET_REGISTRY.wallSoft.path),
+    loadImage(ASSET_REGISTRY.bombSheet.path),
+    loadImage(ASSET_REGISTRY.explosionSheet.path),
+    loadImage(ASSET_REGISTRY.itemSheet.path),
   ]);
 
   const [wallHard, wallSoft, bombSheet, explosionRaw, itemsRaw] = results;

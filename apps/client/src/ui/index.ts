@@ -1,4 +1,5 @@
 import type { RoomState, RoomPlayer } from '@bombermp/shared';
+import { iconPath } from '../assets/registry.js';
 
 // ─── Design constants ─────────────────────────────────────────────────────────
 
@@ -39,7 +40,8 @@ export function showLobby(
 
     <!-- Logo -->
     <div class="bmp-logo">
-      <span class="bmp-logo__bomb" aria-hidden="true">💣</span>
+      <!--<span class="bmp-logo__bomb" aria-hidden="true">💣</span> -->
+      <img class="bmp-logo__bomb" src="${iconPath('hudBombIcon')}" alt="Bomb">
       <h1 class="bmp-logo__text">BomberMP</h1>
     </div>
 
@@ -190,7 +192,8 @@ export function showWaitingRoom(
     <div class="bmp-dec bmp-dec--circle-yellow bmp-dec--sm" aria-hidden="true"></div>
 
     <div class="bmp-logo bmp-logo--sm">
-      <span class="bmp-logo__bomb" aria-hidden="true">💣</span>
+      <!--<span class="bmp-logo__bomb" aria-hidden="true">💣</span> -->
+      <img class="bmp-logo__bomb" src="${iconPath('hudBombIcon')}" alt="Bomb">
       <h1 class="bmp-logo__text">BomberMP</h1>
     </div>
 
@@ -348,9 +351,12 @@ function injectStyles(): void {
     }
     .bmp-logo--sm .bmp-logo__text { font-size: 1.8rem; }
     .bmp-logo--sm .bmp-logo__bomb { font-size: 1.5rem; }
+    .bmp-logo__bomb { display: block; height: 3.5rem; width: auto; }
     .bmp-logo--sm { margin-bottom: 0.15rem; }
     .bmp-logo__bomb {
       font-size: 2.6rem;
+    }
+    .bmp-logo__bomb:hover {
       animation: bmp-wiggle 2.4s ease-in-out infinite;
     }
     .bmp-logo__text {

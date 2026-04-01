@@ -2,20 +2,16 @@ import {
   LATENCY_GREEN_THRESHOLD_MS,
   LATENCY_YELLOW_THRESHOLD_MS,
 } from '@bombermp/shared';
-import { SPRITES, BOMB_SHEET, ITEM_SHEET, ITEM_COL } from '../game/sprites.js';
+import { iconPath } from '../assets/registry.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ICON_SIZE      = 44; // px — icon canvas dimensions
-const BOMB_ANIM_FPS  = 8;  // frames per second for the bomb animation
+const ICON_SIZE = 44; // px — icon canvas dimensions
 
 // ─── Module state ─────────────────────────────────────────────────────────────
 
-let hudEl:        HTMLElement | null = null;
-let bombIconCtx:  CanvasRenderingContext2D | null = null;
-let fireIconCtx:  CanvasRenderingContext2D | null = null;
-let lastBombFrame = -1;
-let fireDrawn     = false;
+let hudEl:       HTMLElement | null = null;
+let fireDrawn    = false;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -34,12 +30,26 @@ export function initHUD(container: HTMLElement): void {
   div.innerHTML = `
     <div class="bmp-hud__left">
       <div class="bmp-hud__stat" title="Active bombs / capacity">
-        <canvas id="hud-bomb-icon" class="bmp-hud__sprite" width="${ICON_SIZE}" height="${ICON_SIZE}"></canvas>
+        <img 
+          id="hud-bomb-icon" 
+          class="bmp-hud__sprite" 
+          src="${iconPath('hudBombIcon')}"
+          width="${ICON_SIZE}" 
+          height="${ICON_SIZE}" 
+          alt="Bomb"
+        >
         <span class="bmp-hud__val" id="hud-bombs">—</span>
       </div>
       <div class="bmp-hud__sep" aria-hidden="true"></div>
       <div class="bmp-hud__stat" title="Blast radius">
-        <canvas id="hud-fire-icon" class="bmp-hud__sprite" width="${ICON_SIZE}" height="${ICON_SIZE}"></canvas>
+        <img 
+          id="hud-bomb-icon" 
+          class="bmp-hud__sprite" 
+          src="${iconPath('hudFireIcon')}"
+          width="${ICON_SIZE}" 
+          height="${ICON_SIZE}" 
+          alt="Bomb"
+        >
         <span class="bmp-hud__val" id="hud-blast">—</span>
       </div>
     </div>
@@ -52,50 +62,7 @@ export function initHUD(container: HTMLElement): void {
   container.insertBefore(div, container.firstChild);
   hudEl = div;
 
-  bombIconCtx = div.querySelector<HTMLCanvasElement>('#hud-bomb-icon')!.getContext('2d');
-  fireIconCtx = div.querySelector<HTMLCanvasElement>('#hud-fire-icon')!.getContext('2d');
-
-  // Draw fire icon immediately if sprites are already loaded
-  tryDrawFireIcon();
   injectHUDStyles();
-}
-
-// ─── Per-frame tick (bomb animation) ─────────────────────────────────────────
-
-/**
- * Drive the looping bomb-fuse animation.
- * Call this from the render loop — internally throttled to BOMB_ANIM_FPS.
- */
-export function tickHUDIcons(): void {
-  // Bomb: loop all 15 frames at BOMB_ANIM_FPS
-  if (bombIconCtx && SPRITES.bombSheet) {
-    const frame = Math.floor(Date.now() / (1000 / BOMB_ANIM_FPS)) % BOMB_SHEET.total;
-    if (frame !== lastBombFrame) {
-      lastBombFrame = frame;
-      const srcX = (frame % BOMB_SHEET.cols) * BOMB_SHEET.frameW;
-      const srcY = Math.floor(frame / BOMB_SHEET.cols) * BOMB_SHEET.frameH;
-      bombIconCtx.clearRect(0, 0, ICON_SIZE, ICON_SIZE);
-      bombIconCtx.drawImage(
-        SPRITES.bombSheet,
-        srcX, srcY, BOMB_SHEET.frameW, BOMB_SHEET.frameH,
-        0, 0, ICON_SIZE, ICON_SIZE,
-      );
-    }
-  }
-
-  // Fire: static, draw once when sprite becomes available
-  if (!fireDrawn) tryDrawFireIcon();
-}
-
-function tryDrawFireIcon(): void {
-  if (fireDrawn || !fireIconCtx || !SPRITES.itemSheet) return;
-  const srcX = ITEM_COL.FIRE_UP * ITEM_SHEET.frameW;
-  fireIconCtx.drawImage(
-    SPRITES.itemSheet,
-    srcX, 0, ITEM_SHEET.frameW, ITEM_SHEET.frameH,
-    0, 0, ICON_SIZE, ICON_SIZE,
-  );
-  fireDrawn = true;
 }
 
 // ─── Stats update ─────────────────────────────────────────────────────────────
@@ -133,9 +100,8 @@ export function showHUD(): void {
 
 export function hideHUD(): void {
   if (hudEl) hudEl.style.display = 'none';
-  // Reset animation state so next game starts cleanly
-  lastBombFrame = -1;
-  fireDrawn     = false;
+  // Reset fire icon state so it redraws on next show
+  fireDrawn = false;
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -175,8 +141,7 @@ function injectHUDStyles(): void {
     /* Icon canvas — pixelated so sprites stay crisp at any size */
     .bmp-hud__sprite {
       display: block;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
+      image-rendering: -webkit-optimize-contrast;
     }
 
     .bmp-hud__val {

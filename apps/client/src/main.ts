@@ -23,7 +23,6 @@ import {
   initHUD,
   showHUD,
   hideHUD,
-  tickHUDIcons,
   updateHUDStats,
   updateHUDLatency,
 } from './ui/hud.js';
@@ -74,7 +73,6 @@ function startRenderLoop(): void {
   function frame(): void {
     const state = gameState.state;
     if (state) render(ctx!, state, myPlayerId, playerSlotMap);
-    tickHUDIcons();
     rafId = requestAnimationFrame(frame);
   }
   rafId = requestAnimationFrame(frame);
