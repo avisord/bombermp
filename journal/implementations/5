@@ -1,0 +1,155 @@
+# Session 5 — Client-Side Prediction: Bug Fixes & Bomb Passthrough
+
+Date: 2026-04-03
+
+---
+
+## What Was Done
+
+Two bugs in the client-side prediction system were diagnosed and fixed, making
+local player movement smooth and collision behaviour consistent with the server.
+
+---
+
+## Bug 1 — Math.floor vs Math.round Collision Mismatch
+
+### Symptom
+
+Movement only appeared after ~4–5 seconds of holding a direction key, then the
+player snapped one tile forward. Pressing a direction key showed no immediate
+response.
+
+### Root Cause
+
+The `collides()` function in `prediction.ts` used `Math.floor` to convert a
+corner's float coordinate into a tile index:
+
+```ts
+const col = Math.floor(cx);
+const row = Math.floor(cy);
+```
+
+The server's `collidesWithGrid` uses `Math.round`:
+
+```ts
+const tx = Math.round(cornerX);
+const ty = Math.round(cornerY);
+```
+
+At spawn tile `(1, 1)` with `HALF = 0.45`, the top-left hitbox corner sits at
+`(0.55, 0.55)`:
+
+| Method | Result | Tile | Tile type |
+|--------|--------|------|-----------|
+| `Math.floor(0.55)` | `0` | `(0, 0)` | `WALL_HARD` → collision! |
+| `Math.round(0.55)` | `1` | `(1, 1)` | `EMPTY` → passable |
+
+The predictor immediately detected a false collision at spawn and blocked all
+movement. The server moved the player normally (using `Math.round`). Once the
+accumulated server–client position error exceeded 1.5 tiles the `reconcile()`
+threshold triggered a hard snap, producing the visible one-tile jump.
+
+### Fix
+
+Changed `collides()` to use `Math.round` on both axes, matching the server exactly.
+
+```ts
+// Before
+const col = Math.floor(cx);
+const row = Math.floor(cy);
+
+// After
+const col = Math.round(cx);
+const row = Math.round(cy);
+```
+
+---
+
+## Bug 2 — Own-Bomb Not Passable on Client
+
+### Symptom
+
+After placing a bomb, the local player was immediately blocked by it and could
+not walk away. The server allowed the player to walk off their own bomb normally.
+
+### Root Cause
+
+The server maintains a `passableBombs: Set<string>` per player. When a bomb is
+placed, its ID is added to the set. Collision checks skip BOMB tiles whose index
+is in the passable set. The tile is only promoted to solid once the player's
+hitbox fully leaves it (checked by `hitboxOverlapsTile`).
+
+The client predictor had no equivalent — it treated every `TileType.BOMB` tile
+as unconditionally solid:
+
+```ts
+function isSolid(tile: TileType): boolean {
+  return tile === TileType.WALL_HARD || tile === TileType.WALL_SOFT || tile === TileType.BOMB;
+}
+```
+
+### Fix
+
+**`prediction.ts`** — Added passable-bomb tracking mirroring the server:
+
+1. Added `passableBombs: Map<tileIndex, {x, y}>` to `LocalPlayerPredictor`.
+2. Added `addPassableBomb(tileX, tileY)` public method — called when the server
+   confirms a new bomb owned by the local player.
+3. `collides()` now accepts a `passable: Set<number>` parameter. BOMB tiles
+   whose flat index is in `passable` are treated as walkable.
+4. `hitboxOverlapsTile(px, py, tx, ty)` added — mirror of server method. Checks
+   whether any of the four hitbox corners rounds to tile `(tx, ty)`.
+5. In `advance()`: before moving each frame, iterate `passableBombs` and remove
+   any entry whose tile the hitbox no longer overlaps. Then build the passable
+   `Set` and pass it to all `collides()` calls.
+
+```ts
+// Promote passable bombs to solid once hitbox fully leaves tile
+for (const [idx, pos] of this.passableBombs) {
+  if (!hitboxOverlapsTile(this.px, this.py, pos.x, pos.y)) {
+    this.passableBombs.delete(idx);
+  }
+}
+const passable = new Set(this.passableBombs.keys());
+```
+
+**`main.ts`** — Registered new bombs in the `game:tick` handler, **before**
+`applyDiff`, so the passable entry exists before the BOMB grid tile is written
+into the client grid (preventing a single-frame block):
+
+```ts
+socket.on('game:tick', (diff) => {
+  if (diff.bombs) {
+    for (const bomb of Object.values(diff.bombs)) {
+      if (bomb.ownerId === myPlayerId) {
+        predictor.addPassableBomb(bomb.position.x, bomb.position.y);
+      }
+    }
+  }
+  gameState.applyDiff(diff);
+  // ...
+});
+```
+
+`passableBombs` is cleared in both `init()` and `reset()` to avoid stale state
+across game rounds.
+
+---
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `apps/client/src/game/prediction.ts` | `Math.round` fix; passable-bomb tracking (`addPassableBomb`, `hitboxOverlapsTile`, passable set in `collides` + `advance`) |
+| `apps/client/src/main.ts` | Register own bombs as passable before `applyDiff` in `game:tick` handler |
+
+---
+
+## Invariants After This Session
+
+- Client collision is byte-for-byte equivalent to server for walls and own-bomb passthrough.
+- The only remaining client–server divergence is other players' bombs (client
+  always treats them as solid, which is correct — only the bomb owner gets
+  passthrough on the server too).
+- `reconcile()` threshold remains at 1.5 tiles; normal prediction lead (~0.3 tiles
+  at 100 ms RTT) never triggers it.

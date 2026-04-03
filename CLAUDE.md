@@ -325,3 +325,25 @@ VITE_WS_URL=wss://bombermbapi.avinashjha.space
 4. **UUID cookie identity** — Lowest friction for players; no registration required.
 5. **In-memory room state** — Rooms are ephemeral; only completed match summaries hit the DB.
 6. **Monorepo with shared package** — Single source of truth for types/constants prevents client-server drift.
+
+---
+
+## Client-Side Prediction (`apps/client/src/game/prediction.ts`)
+
+Local player moves at native framerate (rAF); server state reconciles each tick.
+
+### How it works
+
+- `LocalPlayerPredictor.advance(dir, speedMult, grid, nowMs)` — called every render frame; mirrors server `movePlayer` with real `dt` instead of fixed server DT.
+- `reconcile(serverX, serverY)` — called on every `game:tick`; snaps to server if error > 1.5 tiles, ignores normal prediction lead.
+- `init(x, y)` / `reset()` — called on IN_GAME start / game over / disconnect.
+- Renderer uses predicted position for local player only; remote players use raw server state.
+
+### Critical invariants — must match server exactly
+
+| Rule | Detail |
+|------|--------|
+| **Use `Math.round` for tile lookup** | Server uses `Math.round(corner)` to find which tile a hitbox corner is in. Using `Math.floor` causes false collisions at spawn (corner at 0.55 → tile 0 = WALL_HARD instead of tile 1 = EMPTY). |
+| **Own-bomb passthrough** | Server keeps `passableBombs` per player; BOMB tiles are walkable until hitbox fully leaves. Client mirrors this via `addPassableBomb(x, y)` (called in `game:tick` handler **before** `applyDiff`, so the passable entry exists before the BOMB grid tile is written). Passable bombs are promoted to solid in `advance()` using `hitboxOverlapsTile`. |
+| **HALF = 0.45** | Hitbox half-width, identical to server constant. |
+| **Corner-rounding slide** | On blocked move, nudge the perpendicular axis toward `Math.round(pos)` to allow sliding through corridors — same logic as server. |

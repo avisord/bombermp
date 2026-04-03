@@ -1,7 +1,7 @@
 features:
   - smooth player movement on client side, it should not be jerky or laggy
-
   - no capping on client fps alghough server is runnong on its own tick but client should be able to handle it
+  - bascially client game can be played at any fps but the game updates sould be static to make game predictable both server side and client side
 
   - room/game configuration:
     - can be changed by the creator of the game in lobby

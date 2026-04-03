@@ -1,0 +1,11 @@
+client smoothness:
+  - smooth player movement on client side, it should not be jerky or laggy
+  - server is running on its own tick but client should be able to handle it
+  - no capping on client fps
+  - client updates frequency = constant rate
+  - client frame time = depend on client fps 
+  - clients handles the current client simulation
+  - sends the inputs to server
+  - server updates the game state
+  - in regular intervals the server sends the client state (authoritative)
+  - client reconciles the server state with its own state

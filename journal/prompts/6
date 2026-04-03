@@ -1,0 +1,13 @@
+debug mode:
+  - need a debug mode to see following stats:
+    - a setup to see different graphs
+    - we should be able to add multiple graphs to see different stats (one or more graph at a time)
+    - for graphs we need these: 
+      - a title
+      - a info text: on hovering the (i) icon
+      - the graph itself
+    - all these modules should be conditionally lazy loaded only in dev envoronment
+    - currently we need some of the graphs to be visible in dev envoronment:
+       - socket communication api recieved/sent
+       - game update client/server
+

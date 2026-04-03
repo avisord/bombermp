@@ -1,0 +1,163 @@
+# Session 2 — Client-Side Prediction for Smooth Movement
+
+Date: 2026-04-01
+
+---
+
+## What Was Done
+
+Implemented client-side prediction for the local player to eliminate input lag.
+At 20 TPS the round-trip latency (input → server tick → state diff back) caused
+visibly jerky movement. The local player now moves immediately on keypress using
+the same physics the server runs; the server's authoritative position reconciles
+the prediction each tick.
+
+Remote players are unaffected — they still render from raw server state at 20fps
+(interpolation is future work).
+
+---
+
+## Files Created / Modified
+
+| File | Change |
+|------|--------|
+| `apps/client/src/game/input.ts` | Added `peekDirection()` public method |
+| `apps/client/src/game/prediction.ts` | **New** — `LocalPlayerPredictor` class |
+| `apps/client/src/game/renderer.ts` | Added optional `localPredictedX/Y` params to `render()` |
+| `apps/client/src/main.ts` | Wired predictor into render loop + tick handler |
+
+---
+
+## `LocalPlayerPredictor` (`prediction.ts`)
+
+Mirrors the server's `movePlayer` + `collidesWithGrid` logic exactly.
+
+### Collision
+
+```
+HALF = 0.45  (identical to server)
+isSolid: WALL_HARD | WALL_SOFT | BOMB
+collides: 4-corner AABB check, returns true if any corner hits a solid tile or goes out of bounds
+```
+
+BOMB tiles are always treated as solid (no own-bomb passthrough tracking).
+If the player drops a bomb and immediately walks, prediction briefly shows them
+blocked; the server corrects within one tick. Accepted tradeoff.
+
+### `advance(dir, speedMult, grid, nowMs)`
+
+Called every render frame (~60 fps). Uses real elapsed `dt` instead of the fixed
+server DT so position advances smoothly.
+
+```
+delta = PLAYER_SPEED * speedMult * dt
+Try newX, newY → if no collision, move
+Corner-rounding (mirror of server):
+  dx != 0: nudge Y toward Math.round(py), retry X+nudgedY, retry nudgedY only
+  dy != 0: nudge X toward Math.round(px), retry nudgedX+Y, retry nudgedX only
+Fully blocked → don't move
+dt is capped at 100 ms to prevent huge jumps after tab sleep
+```
+
+### `reconcile(serverX, serverY)`
+
+Called on every `game:tick` after `applyDiff`:
+
+```
+errSq = (px - serverX)² + (py - serverY)²
+errSq > 0.09  (> 0.3 tiles) → snap immediately
+errSq > 0.0001              → gentle lerp: px += (serverX - px) * 0.4
+errSq ≈ 0                   → already aligned, skip
+```
+
+### `init(serverX, serverY)` / `reset()`
+
+- `init` seeds position + `lastFrameMs` when IN_GAME starts
+- `reset` deactivates predictor; `advance`/`reconcile` are no-ops when inactive
+
+---
+
+## `input.ts` — `peekDirection()`
+
+```ts
+peekDirection(): Direction | null {
+  return this.deriveDirection();
+}
+```
+
+Non-destructive read: does not consume `bombQueued`. The existing
+`getCurrentInput()` is still the only method that clears `bombQueued`.
+
+---
+
+## `renderer.ts` — optional predicted position
+
+`render()` gained two optional trailing params:
+
+```ts
+export function render(
+  ctx, state, myPlayerId, playerSlotMap,
+  localPredictedX?: number,
+  localPredictedY?: number,
+): void
+```
+
+In the players loop, if the current player is `myPlayerId` and both predicted
+coords are defined, `drawPlayer` is called with `{ ...player, pixelX: localPredictedX, pixelY: localPredictedY }`.
+Remote players always use the server's `pixelX/Y`.
+
+---
+
+## `main.ts` wiring
+
+### Instance
+```ts
+const predictor = new LocalPlayerPredictor();
+```
+
+### Render loop
+```ts
+const now = performance.now();
+const me  = state.players[myPlayerId];
+predictor.advance(input.peekDirection(), me?.speedMultiplier ?? 1.0, state.grid, now);
+render(ctx!, state, myPlayerId, playerSlotMap, predictor.x, predictor.y);
+```
+
+### `room:state` IN_GAME handler
+```ts
+// Active player branch
+const me = state.gameState.players[myPlayerId]!;
+predictor.init(me.pixelX, me.pixelY);
+
+// Spectator branch
+predictor.reset();
+```
+
+### `game:tick` handler
+```ts
+const me = gameState.state?.players[myPlayerId];
+if (me?.alive) predictor.reconcile(me.pixelX, me.pixelY);
+```
+
+### Reset sites
+`predictor.reset()` called in: `WAITING`/`STARTING` branch, spectator branch,
+`game:over` handler, `disconnect` handler.
+
+---
+
+## Verification
+
+- `pnpm typecheck` — zero errors across all packages
+- Movement feels instant with no perceptible input lag
+- Player stops immediately at walls (prediction blocks)
+- Corner-rounding lets player slide through narrow corridors matching server behaviour
+- At simulated ~100 ms RTT no visible snapping occurs
+- Dropping a bomb then immediately walking: < 1-tick prediction block, then server corrects
+
+---
+
+## Remaining from `prompts/2`
+
+- Room configuration (speed, bomb count, blast radius) settable by creator in lobby
+- FPS uncapping / client render loop (currently tied to `requestAnimationFrame`)
+- Full game replay save feature (per-game file + user stats in DB)

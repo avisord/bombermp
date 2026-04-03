@@ -1,0 +1,3 @@
+i've added raw assets for game in assets/raw/*, clean them and then setup them in our main game renderer, use bomb
+  and explosion animation sprites to animate them
+
