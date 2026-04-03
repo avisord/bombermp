@@ -1,0 +1,4 @@
+instead of showing the game hud on the top of the game view 
+it should be in left side of the screen, 
+keep the logic for standard width and fluid design 
+game should be centered in the container
