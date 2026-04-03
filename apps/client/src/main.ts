@@ -3,6 +3,7 @@ import {
   GRID_ROWS,
   TILE_SIZE,
   LATENCY_PING_INTERVAL_MS,
+  EXPLOSION_DURATION_MS,
   RoomStatus,
 } from '@bombermp/shared';
 import type { RoomState } from '@bombermp/shared';
@@ -210,10 +211,17 @@ socket.on('game:tick', (diff) => {
 });
 
 socket.on('game:over', ({ winnerId }) => {
-  stopRenderLoop();
+  // Stop inputs and prediction immediately — player can no longer act.
   input.detach(document);
   predictor.reset();
-  showGameOver(uiRoot, winnerId, gameState.state?.players ?? {});
+
+  // Keep the render loop alive long enough for the explosion animation to finish,
+  // then freeze the canvas and show the game over overlay.
+  const players = { ...gameState.state?.players };
+  setTimeout(() => {
+    stopRenderLoop();
+    showGameOver(uiRoot, winnerId, players);
+  }, EXPLOSION_DURATION_MS + 100);
 });
 
 socket.on('latency:pong', ({ clientTime }: { clientTime: number }) => {

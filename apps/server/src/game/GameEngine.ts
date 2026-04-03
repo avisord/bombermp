@@ -150,6 +150,7 @@ export class GameEngine {
     this.processInputs();
     this.updateBombs();
     this.updateExplosions();
+    this.checkExplosionDamage();
     this.checkItemPickups();
 
     const winner = this.checkWinCondition();
@@ -461,6 +462,26 @@ export class GameEngine {
       }
       // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete this.state.explosions[expId];
+    }
+  }
+
+  // ─── Ongoing explosion damage ─────────────────────────────────────────────────
+
+  /**
+   * Kill any alive player who is currently standing on an EXPLOSION tile.
+   * Called every tick after updateExplosions() so expired explosions are already
+   * cleared before we test. This ensures players who walk INTO a live flame die.
+   */
+  private checkExplosionDamage(): void {
+    for (const [playerId, sp] of this.serverPlayers) {
+      if (!sp.alive) continue;
+      const tx = Math.round(sp.pixelX);
+      const ty = Math.round(sp.pixelY);
+      if (this.state.grid[toIndex(tx, ty)] === TileType.EXPLOSION) {
+        sp.alive = false;
+        const statePlayer = this.state.players[playerId];
+        if (statePlayer) statePlayer.alive = false;
+      }
     }
   }
 
