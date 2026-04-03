@@ -10,6 +10,7 @@ import { socket, getOrCreatePlayerId, getStoredDisplayName, setStoredDisplayName
 import { ClientGameState } from './game/state.js';
 import { InputHandler } from './game/input.js';
 import { render, clearExplosionTimestamps } from './game/renderer.js';
+import { LocalPlayerPredictor } from './game/prediction.js';
 import { loadSprites } from './game/sprites.js';
 import {
   showLobby,
@@ -47,6 +48,7 @@ canvas.height = GRID_ROWS * TILE_SIZE;
 const myPlayerId  = getOrCreatePlayerId();
 const gameState   = new ClientGameState();
 const input       = new InputHandler();
+const predictor   = new LocalPlayerPredictor();
 const playerSlotMap = new Map<string, number>();
 
 let rtt            = 0;
@@ -85,9 +87,14 @@ function hideGameView(): void {
 
 function startRenderLoop(): void {
   if (rafId !== null) return;
-  function frame(): void {
+  function frame(nowMs: number): void {
     const state = gameState.state;
-    if (state) render(ctx!, state, myPlayerId, playerSlotMap);
+    if (state) {
+      const me = state.players[myPlayerId];
+      if (me) predictor.advance(input.currentDir, me.speedMultiplier, state.grid, nowMs);
+      const predicted = predictor.isActive ? { x: predictor.x, y: predictor.y } : null;
+      render(ctx!, state, myPlayerId, playerSlotMap, predicted);
+    }
     rafId = requestAnimationFrame(frame);
   }
   rafId = requestAnimationFrame(frame);
@@ -123,6 +130,7 @@ socket.on('room:state', (state: RoomState) => {
       hideGameView();
       input.detach(document);
       gameState.reset();
+      predictor.reset();
       clearExplosionTimestamps();
       showUI(uiRoot);
       showWaitingRoom(
@@ -143,7 +151,9 @@ socket.on('room:state', (state: RoomState) => {
 
     case RoomStatus.IN_GAME:
       if (state.gameState && state.gameState.players[myPlayerId]) {
+        const me = state.gameState.players[myPlayerId]!;
         gameState.init(state.gameState);
+        predictor.init(me.pixelX, me.pixelY);
         showGameView();
         input.attach(document);
         startRenderLoop();
@@ -153,6 +163,7 @@ socket.on('room:state', (state: RoomState) => {
         hideGameView();
         input.detach(document);
         gameState.reset();
+        predictor.reset();
         clearExplosionTimestamps();
         showUI(uiRoot);
         showWaitingRoom(
@@ -176,17 +187,32 @@ socket.on('room:state', (state: RoomState) => {
 });
 
 socket.on('game:tick', (diff) => {
+  // Register any new bombs placed by the local player as passable before applying
+  // the diff (the grid update arrives in the same diff, so we need to mark it
+  // passable before the predictor sees the BOMB tile).
+  if (diff.bombs) {
+    for (const bomb of Object.values(diff.bombs)) {
+      if (bomb.ownerId === myPlayerId) {
+        predictor.addPassableBomb(bomb.position.x, bomb.position.y);
+      }
+    }
+  }
+
   gameState.applyDiff(diff);
   socket.emit('player:input', input.getCurrentInput());
 
-  // Update HUD text with latest player stats
+  // Reconcile predictor with authoritative server position
   const me = gameState.state?.players[myPlayerId];
-  if (me) updateHUDStats(me.activeBombs, me.maxBombs, me.blastRadius);
+  if (me) {
+    predictor.reconcile(me.pixelX, me.pixelY);
+    updateHUDStats(me.activeBombs, me.maxBombs, me.blastRadius);
+  }
 });
 
 socket.on('game:over', ({ winnerId }) => {
   stopRenderLoop();
   input.detach(document);
+  predictor.reset();
   showGameOver(uiRoot, winnerId, gameState.state?.players ?? {});
 });
 

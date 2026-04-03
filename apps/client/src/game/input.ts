@@ -35,6 +35,10 @@ export class InputHandler {
     this.bombQueued = false;
   }
 
+  get currentDir(): Direction | null {
+    return this.deriveDirection();
+  }
+
   getCurrentInput(): C2SPlayerInput {
     const dir = this.deriveDirection();
     const action: 'bomb' | null = this.bombQueued ? 'bomb' : null;

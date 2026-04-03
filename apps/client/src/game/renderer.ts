@@ -48,6 +48,7 @@ export function render(
   state: GameState,
   myPlayerId: string,
   playerSlotMap: Map<string, number>,
+  predictedPos: { x: number; y: number } | null,
 ): void {
   const canvasW = GRID_COLS * TILE_SIZE;
   const canvasH = GRID_ROWS * TILE_SIZE;
@@ -85,7 +86,10 @@ export function render(
 
   // ── Players ──────────────────────────────────────────────────────────────
   for (const [id, player] of Object.entries(state.players)) {
-    if (player.alive) drawPlayer(ctx, player, id, myPlayerId, playerSlotMap);
+    if (player.alive) {
+      const pos = (id === myPlayerId && predictedPos) ? predictedPos : null;
+      drawPlayer(ctx, player, id, myPlayerId, playerSlotMap, pos);
+    }
   }
 }
 
@@ -292,14 +296,17 @@ function drawPlayer(
   id: string,
   myPlayerId: string,
   playerSlotMap: Map<string, number>,
+  predictedPos: { x: number; y: number } | null,
 ): void {
   const slotIndex = playerSlotMap.get(id) ?? 0;
   const color     = PLAYER_COLORS[slotIndex % PLAYER_COLORS.length]    ?? '#8B5CF6';
   const colorDk   = PLAYER_COLORS_DK[slotIndex % PLAYER_COLORS_DK.length] ?? '#6D28D9';
   const isMe      = id === myPlayerId;
 
-  const cx = player.pixelX * TILE_SIZE + TILE_SIZE / 2;
-  const cy = player.pixelY * TILE_SIZE + TILE_SIZE / 2;
+  const renderX = predictedPos ? predictedPos.x : player.pixelX;
+  const renderY = predictedPos ? predictedPos.y : player.pixelY;
+  const cx = renderX * TILE_SIZE + TILE_SIZE / 2;
+  const cy = renderY * TILE_SIZE + TILE_SIZE / 2;
   const r  = TILE_SIZE * 0.36;
 
   // Hard offset shadow (design system "pop" shadow)
