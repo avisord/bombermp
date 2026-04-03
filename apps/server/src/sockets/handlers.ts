@@ -71,11 +71,11 @@ export function registerHandlers(io: IoServer): void {
     });
 
     // ── room:start ────────────────────────────────────────────────────────────
-    socket.on('room:start', () => {
+    socket.on('room:start', (payload) => {
       try {
         const roomId = socket.data.roomId;
         if (!roomId) { socket.emit('error', { message: 'Not in a room' }); return; }
-        roomManager.startGame(roomId, playerId);
+        roomManager.startGame(roomId, playerId, payload?.skipCountdown === true);
       } catch (err: unknown) {
         socket.emit('error', { message: errMsg(err, 'Failed to start game') });
       }

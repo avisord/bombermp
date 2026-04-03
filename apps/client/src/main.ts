@@ -46,6 +46,7 @@ canvas.height = GRID_ROWS * TILE_SIZE;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
+const isTestMode  = window.location.pathname === '/test-game';
 const myPlayerId  = getOrCreatePlayerId();
 const gameState   = new ClientGameState();
 const input       = new InputHandler();
@@ -134,6 +135,14 @@ socket.on('room:state', (state: RoomState) => {
       predictor.reset();
       clearExplosionTimestamps();
       showUI(uiRoot);
+
+      if (isTestMode) {
+        // Auto-start immediately, skipping the countdown entirely
+        uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Setting up game\u2026</p>';
+        socket.emit('room:start', { skipCountdown: true });
+        break;
+      }
+
       showWaitingRoom(
         uiRoot,
         state,
@@ -231,6 +240,10 @@ socket.on('latency:pong', ({ clientTime }: { clientTime: number }) => {
 
 socket.on('error', ({ message }: { message: string }) => {
   console.error('[server error]', message);
+  if (isTestMode) {
+    uiRoot.innerHTML = `<p style="color:#DC2626;font-family:sans-serif;text-align:center;padding:2rem">Error: ${message}</p>`;
+    return;
+  }
   if (getRoomIdFromHash()) clearRoomHash();
   showLobbyError(uiRoot, message);
 });
@@ -244,7 +257,11 @@ socket.on('disconnect', (reason) => {
   stopRenderLoop();
   input.detach(document);
   hideGameView();
-  showLobby(uiRoot, onCreateRoom, onJoinRoom);
+  if (isTestMode) {
+    uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Disconnected. Reconnecting\u2026</p>';
+  } else {
+    showLobby(uiRoot, onCreateRoom, onJoinRoom);
+  }
 });
 
 // ─── Latency ping ─────────────────────────────────────────────────────────────
@@ -289,7 +306,14 @@ void loadSprites();
 const hashRoomId  = getRoomIdFromHash();
 const storedName  = getStoredDisplayName();
 
-if (hashRoomId && storedName) {
+if (isTestMode) {
+  const name = storedName || 'TestPlayer';
+  uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Connecting\u2026</p>';
+  socket.once('connect', () => {
+    setStoredDisplayName(name);
+    socket.emit('room:create', { displayName: name });
+  });
+} else if (hashRoomId && storedName) {
   socket.once('connect', () => {
     socket.emit('room:join', { roomId: hashRoomId, displayName: storedName });
   });
