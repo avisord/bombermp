@@ -1,0 +1,15 @@
+- items:
+  - bomb:
+    - fire bomb
+    - ice bomb
+    - rolling bomb
+    - chasing bomb
+    - shodow bomb
+    - confusion bomb (clearly show users what is happening)
+      - opposite direction movement
+  - bomb range buff
+  - speed buff
+
+- indicators:
+  - bomb range indicator (low opacity range)
+  - bomb blast indicator (fade out/in animation)

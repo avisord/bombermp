@@ -1,0 +1,9 @@
+fix: game end screen
+- currently game ends very abdruptly:
+  - we need to show player a clear message that the game is over and why.
+  - whe bomb blast animation should be shown 
+  - currently the bomb blask animation is also not hostile to the player (it should be)
+  - while the bomb is blasting (flames are visible) players should not be in that flame
+  - if player is in the flame/explosion then they should be dead
+  - but before the game end blast should finished first
+  - we need to show the winner to all the active players
