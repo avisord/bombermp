@@ -20,7 +20,8 @@ import {
 // ─── Fallback palette (canvas-drawn when sprites haven't loaded) ──────────────
 
 const FALLBACK: Record<TileType, string> = {
-  [TileType.EMPTY]:     '#F5F0E8',
+  [TileType.EMPTY]:     '#1a4d08',
+  // [TileType.EMPTY]:     '#F5F0E8',
   [TileType.WALL_HARD]: '#334155',
   [TileType.WALL_SOFT]: '#A78BFA',
   [TileType.BOMB]:      '#F5F0E8',
@@ -109,6 +110,12 @@ function drawTile(
 
   switch (tile) {
     case TileType.EMPTY:
+      ctx.fillStyle = FALLBACK[TileType.EMPTY];
+      ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, TILE_SIZE - 1, TILE_SIZE - 1);
+      break;
     case TileType.BOMB:
     case TileType.ITEM:
       break; // floor already drawn above

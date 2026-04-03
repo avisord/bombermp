@@ -43,10 +43,15 @@ export type AssetEntry = PlainEntry | SheetEntry | CroppedEntry | IconEntry;
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 export const ASSET_REGISTRY = {
+  // wallHard: {
+  //   kind: 'cropped',
+  //   path: '/sprites/wall-hard.png',
+  //   crop: { sx: 0, sy: 0, sw: 190, sh: 190 },
+  // },
   wallHard: {
     kind: 'cropped',
-    path: '/sprites/wall-hard.png',
-    crop: { sx: 0, sy: 0, sw: 190, sh: 190 },
+    path: '/sprites/stone_sprite.png',
+    crop: { sx: 0, sy: 0, sw: 2048, sh: 2048 },
   },
   wallSoft: {
     kind: 'cropped',
