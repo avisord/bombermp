@@ -15,6 +15,7 @@ export const ITEM_COL = {
 
 export const WALL_HARD_CROP = ASSET_REGISTRY.wallHard.crop;
 export const WALL_SOFT_CROP = ASSET_REGISTRY.wallSoft.crop;
+export const EMPTY_CROP = ASSET_REGISTRY.empty.crop;
 
 // ─── Sprite registry ──────────────────────────────────────────────────────────
 //
@@ -26,12 +27,16 @@ export const WALL_SOFT_CROP = ASSET_REGISTRY.wallSoft.crop;
 export const SPRITES: {
   wallHard:       HTMLImageElement  | null;
   wallSoft:       HTMLImageElement  | null;
+  empty:          HTMLImageElement  | null;
+  bombPlain:      HTMLImageElement  | null;
   bombSheet:      HTMLImageElement  | null;
   explosionSheet: HTMLCanvasElement | null;
   itemSheet:      HTMLCanvasElement | null;
 } = {
   wallHard:       null,
   wallSoft:       null,
+  empty:          null,
+  bombPlain:      null,
   bombSheet:      null,
   explosionSheet: null,
   itemSheet:      null,
@@ -89,16 +94,18 @@ export async function loadSprites(): Promise<void> {
   const results = await Promise.allSettled([
     loadImage(ASSET_REGISTRY.wallHard.path),
     loadImage(ASSET_REGISTRY.wallSoft.path),
+    loadImage(ASSET_REGISTRY.bombPlain.path),
     loadImage(ASSET_REGISTRY.bombSheet.path),
     loadImage(ASSET_REGISTRY.explosionSheet.path),
     loadImage(ASSET_REGISTRY.itemSheet.path),
   ]);
 
-  const [wallHard, wallSoft, bombSheet, explosionRaw, itemsRaw] = results;
+  const [wallHard, wallSoft, bombPlain, bombSheet, explosionRaw, itemsRaw] = results;
 
-  if (wallHard.status  === 'fulfilled') SPRITES.wallHard  = wallHard.value;
-  if (wallSoft.status  === 'fulfilled') SPRITES.wallSoft  = wallSoft.value;
-  if (bombSheet.status === 'fulfilled') SPRITES.bombSheet = bombSheet.value;
+  if (wallHard.status   === 'fulfilled') SPRITES.wallHard   = wallHard.value;
+  if (wallSoft.status   === 'fulfilled') SPRITES.wallSoft   = wallSoft.value;
+  if (bombPlain.status  === 'fulfilled') SPRITES.bombPlain  = bombPlain.value;
+  if (bombSheet.status  === 'fulfilled') SPRITES.bombSheet  = bombSheet.value;
 
   // Strip near-black backgrounds → proper transparency
   if (explosionRaw.status === 'fulfilled') {

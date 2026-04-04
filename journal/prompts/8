@@ -1,0 +1,16 @@
+fix: game ui design
+
+- instead of showing detailed textures we will show simple colored cartoonish textures/colors
+  - tiles:
+    - indestructible walls: cement color
+    - floor: soft green (grass)
+    - destructible walls: red
+    - bombs: fading in/out of a bomb texture
+    - explosions: yellow orange red
+    - items: item with subscript buff/nerf
+      - speed up: shoes subscript(↑/+)
+      - bomb up: bomb subscript(↑/+)
+      - fire up: fire subscript(↑/+)
+      - speed down: shoes subscript(↓/-)
+  - player:
+    - player: colored circle (current will work)

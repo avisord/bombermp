@@ -43,20 +43,24 @@ export type AssetEntry = PlainEntry | SheetEntry | CroppedEntry | IconEntry;
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 export const ASSET_REGISTRY = {
-  // wallHard: {
-  //   kind: 'cropped',
-  //   path: '/sprites/wall-hard.png',
-  //   crop: { sx: 0, sy: 0, sw: 190, sh: 190 },
-  // },
-  wallHard: {
+   wallHard: {
     kind: 'cropped',
-    path: '/sprites/stone_sprite.png',
-    crop: { sx: 0, sy: 0, sw: 2048, sh: 2048 },
+    path: '/sprites/new/unbreakable-wall.png',
+    crop: { sx: 0, sy: 0, sw: 735, sh: 735 },
   },
   wallSoft: {
     kind: 'cropped',
-    path: '/sprites/wall-soft.png',
-    crop: { sx: 0, sy: 0, sw: 370, sh: 370 },
+    path: '/sprites/new/brekable-brick.png',
+    crop: { sx: 0, sy: 0, sw: 703, sh: 703 },
+  },
+  empty: {
+    kind: 'cropped',
+    path: '/sprites/new/empty.png',
+    crop: { sx: 0, sy: 0, sw: 722, sh: 722 },
+  },
+  bombPlain: {
+    kind: 'plain',
+    path: '/sprites/new/bomb.png',
   },
   bombSheet: {
     kind:       'sheet',
