@@ -28,6 +28,7 @@ export function showLobby(
   onCreate: (name: string) => void,
   onJoin: (roomId: string, name: string) => void,
   prefillRoomId?: string,
+  onCustomize?: () => void,
 ): void {
   clear(root);
   root.style.display = 'flex';
@@ -99,6 +100,11 @@ export function showLobby(
       </div>
     </div>
 
+    <button class="bmp-btn bmp-btn--ghost bmp-btn--sm" id="customize-btn"
+      style="align-self:center;gap:0.35rem">
+      🎨 Customize Character
+    </button>
+
     <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
   `;
 
@@ -132,6 +138,10 @@ export function showLobby(
   createNameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') createBtn.click(); });
   joinNameEl.addEventListener('keydown',   (e) => { if (e.key === 'Enter') joinBtn.click(); });
   joinIdEl.addEventListener('keydown',     (e) => { if (e.key === 'Enter') joinBtn.click(); });
+
+  root.querySelector<HTMLButtonElement>('#customize-btn')?.addEventListener('click', () => {
+    onCustomize?.();
+  });
 
   if (prefillRoomId) {
     joinIdEl.value = prefillRoomId;

@@ -5,9 +5,13 @@ import {
   LATENCY_PING_INTERVAL_MS,
   EXPLOSION_DURATION_MS,
   RoomStatus,
+  Direction,
 } from '@bombermp/shared';
 import type { RoomState } from '@bombermp/shared';
 import { socket, getOrCreatePlayerId, getStoredDisplayName, setStoredDisplayName } from './socket/client.js';
+import { loadAppearance, saveAppearance } from './game/appearance.js';
+import type { PlayerAppearance } from './game/appearance.js';
+import { showCustomize } from './ui/customize.js';
 import { ClientGameState } from './game/state.js';
 import { InputHandler } from './game/input.js';
 import { render, clearExplosionTimestamps } from './game/renderer.js';
@@ -57,6 +61,11 @@ let rtt            = 0;
 let rafId: number | null = null;
 let lastRoomState: RoomState | null = null;
 
+// ─── Appearance & direction ────────────────────────────────────────────────────
+let myAppearance: PlayerAppearance = loadAppearance();
+const playerDirections = new Map<string, Direction>();
+const playerPrevPixel  = new Map<string, { x: number; y: number }>();
+
 // ─── Hash utilities ───────────────────────────────────────────────────────────
 
 function setRoomHash(roomId: string): void {
@@ -95,7 +104,7 @@ function startRenderLoop(): void {
       const me = state.players[myPlayerId];
       if (me) predictor.advance(input.currentDir, me.speedMultiplier, state.grid, nowMs);
       const predicted = predictor.isActive ? { x: predictor.x, y: predictor.y } : null;
-      render(ctx!, state, myPlayerId, playerSlotMap, predicted);
+      render(ctx!, state, myPlayerId, playerSlotMap, predicted, playerDirections, myAppearance);
     }
     rafId = requestAnimationFrame(frame);
   }
@@ -134,6 +143,8 @@ socket.on('room:state', (state: RoomState) => {
       gameState.reset();
       predictor.reset();
       clearExplosionTimestamps();
+      playerDirections.clear();
+      playerPrevPixel.clear();
       showUI(uiRoot);
 
       if (isTestMode) {
@@ -151,7 +162,7 @@ socket.on('room:state', (state: RoomState) => {
         () => {
           socket.emit('room:leave');
           clearRoomHash();
-          showLobby(uiRoot, onCreateRoom, onJoinRoom);
+          showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
         },
       );
       if (state.status === RoomStatus.STARTING && state.countdownEndsAt) {
@@ -184,7 +195,7 @@ socket.on('room:state', (state: RoomState) => {
           () => {
             socket.emit('room:leave');
             clearRoomHash();
-            showLobby(uiRoot, onCreateRoom, onJoinRoom);
+            showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
           },
           true, // gameInProgress
         );
@@ -210,6 +221,29 @@ socket.on('game:tick', (diff) => {
 
   gameState.applyDiff(diff);
   socket.emit('player:input', input.getCurrentInput());
+
+  // Update facing directions from position deltas
+  const allPlayers = gameState.state?.players;
+  if (allPlayers) {
+    for (const [id, player] of Object.entries(allPlayers)) {
+      const prev = playerPrevPixel.get(id);
+      if (prev) {
+        const dx = player.pixelX - prev.x;
+        const dy = player.pixelY - prev.y;
+        if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+          playerDirections.set(id,
+            Math.abs(dx) >= Math.abs(dy)
+              ? (dx > 0 ? Direction.RIGHT : Direction.LEFT)
+              : (dy > 0 ? Direction.DOWN  : Direction.UP),
+          );
+        }
+      }
+      playerPrevPixel.set(id, { x: player.pixelX, y: player.pixelY });
+    }
+  }
+  // Local player: live input direction is more responsive than position delta
+  const liveDir = input.currentDir;
+  if (liveDir !== null) playerDirections.set(myPlayerId, liveDir);
 
   // Reconcile predictor with authoritative server position
   const me = gameState.state?.players[myPlayerId];
@@ -282,6 +316,14 @@ function onJoinRoom(roomId: string, name: string): void {
   socket.emit('room:join', { roomId, displayName: name });
 }
 
+function onCustomize(): void {
+  showCustomize(uiRoot, myAppearance, 0, (newAppearance) => {
+    myAppearance = newAppearance;
+    saveAppearance(newAppearance);
+    showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
+  });
+}
+
 // ─── Countdown ticker ─────────────────────────────────────────────────────────
 
 function tickCountdown(endsAt: number, cachedState: RoomState): void {
@@ -317,10 +359,10 @@ if (isTestMode) {
   socket.once('connect', () => {
     socket.emit('room:join', { roomId: hashRoomId, displayName: storedName });
   });
-  showLobby(uiRoot, onCreateRoom, onJoinRoom);
+  showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
 } else if (hashRoomId) {
-  showLobby(uiRoot, onCreateRoom, onJoinRoom, hashRoomId);
+  showLobby(uiRoot, onCreateRoom, onJoinRoom, hashRoomId, onCustomize);
 } else {
-  showLobby(uiRoot, onCreateRoom, onJoinRoom);
+  showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
 }
 socket.connect();

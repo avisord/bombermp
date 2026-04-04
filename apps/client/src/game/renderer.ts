@@ -6,6 +6,7 @@ import {
   ItemType,
   EXPLOSION_DURATION_MS,
   BOMB_FUSE_MS,
+  Direction,
 } from '@bombermp/shared';
 import type { GameState } from '@bombermp/shared';
 import {
@@ -17,6 +18,8 @@ import {
   WALL_SOFT_CROP,
   EMPTY_CROP,
 } from './sprites.js';
+import type { PlayerAppearance, BodyShape, EyeStyle, HatStyle, Accessory } from './appearance.js';
+import { appearanceFromId, DIRECTION_ANGLE } from './appearance.js';
 
 // ─── Bomb pulse config ────────────────────────────────────────────────────────
 // Tune these to change how the bomb fades in/out.
@@ -59,6 +62,8 @@ export function render(
   myPlayerId: string,
   playerSlotMap: Map<string, number>,
   predictedPos: { x: number; y: number } | null,
+  playerDirections: Map<string, Direction>,
+  myAppearance: PlayerAppearance,
 ): void {
   const canvasW = GRID_COLS * TILE_SIZE;
   const canvasH = GRID_ROWS * TILE_SIZE;
@@ -97,8 +102,10 @@ export function render(
   // ── Players ──────────────────────────────────────────────────────────────
   for (const [id, player] of Object.entries(state.players)) {
     if (player.alive) {
-      const pos = (id === myPlayerId && predictedPos) ? predictedPos : null;
-      drawPlayer(ctx, player, id, myPlayerId, playerSlotMap, pos);
+      const pos        = (id === myPlayerId && predictedPos) ? predictedPos : null;
+      const facing     = playerDirections.get(id) ?? Direction.DOWN;
+      const appearance = id === myPlayerId ? myAppearance : appearanceFromId(id);
+      drawPlayer(ctx, player, id, myPlayerId, playerSlotMap, pos, facing, appearance, now);
     }
   }
 }
@@ -308,6 +315,9 @@ function drawPlayer(
   myPlayerId: string,
   playerSlotMap: Map<string, number>,
   predictedPos: { x: number; y: number } | null,
+  facing: Direction,
+  appearance: PlayerAppearance,
+  now: number,
 ): void {
   const slotIndex = playerSlotMap.get(id) ?? 0;
   const color     = PLAYER_COLORS[slotIndex % PLAYER_COLORS.length]    ?? '#8B5CF6';
@@ -320,42 +330,347 @@ function drawPlayer(
   const cy = renderY * TILE_SIZE + TILE_SIZE / 2;
   const r  = TILE_SIZE * 0.36;
 
-  // Hard offset shadow (design system "pop" shadow)
+  drawCharacter(ctx, cx, cy, r, color, colorDk, appearance, facing, now);
+
+  // "Me" double ring
+  // if (isMe) {
+  //   ctx.beginPath();
+  //   ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+  //   ctx.strokeStyle = '#FFFFFF';
+  //   ctx.lineWidth = 3;
+  //   ctx.stroke();
+  //   ctx.beginPath();
+  //   ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+  //   ctx.strokeStyle = colorDk;
+  //   ctx.lineWidth = 1.5;
+  //   ctx.stroke();
+  // }
+
+  // Name label
+  const label = isMe ? `${player.displayName} ★` : player.displayName;
+  ctx.font         = `bold 13px 'Outfit', system-ui, sans-serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillStyle    = 'rgba(30,41,59,0.55)';
+  ctx.fillText(label, cx + 1, cy + r + 19);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText(label, cx, cy + r + 20);
+}
+
+// ─── Character drawing (shared with customize preview) ────────────────────────
+
+/**
+ * Draws the player character body at (cx, cy) with radius r.
+ * Used by both the game renderer and the customize-panel live preview.
+ */
+export function drawCharacter(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, r: number,
+  color: string, colorDk: string,
+  appearance: PlayerAppearance,
+  facing: Direction,
+  now: number,
+): void {
+  const angle = DIRECTION_ANGLE[facing];
+  const sqR   = r * 0.88; // half-side for square body
+
+  // Shadow
   ctx.beginPath();
-  ctx.arc(cx + 3, cy + 3, r, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(30,41,59,0.3)';
+  ctx.fillStyle = 'rgba(30,41,59,0.28)';
+  if (appearance.body === 'square') {
+    ctx.roundRect(cx - sqR + 3, cy - sqR + 3, sqR * 2, sqR * 2, sqR * 0.28);
+  } else {
+    ctx.arc(cx + 3, cy + 3, r, 0, Math.PI * 2);
+  }
   ctx.fill();
 
-  // Player circle
+  // Body
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  if (appearance.body === 'square') {
+    ctx.roundRect(cx - sqR, cy - sqR, sqR * 2, sqR * 2, sqR * 0.28);
+  } else {
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  }
   ctx.fillStyle = color;
   ctx.fill();
   ctx.strokeStyle = colorDk;
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // "Me" double ring
-  if (isMe) {
-    ctx.beginPath();
-    ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
-    ctx.strokeStyle = colorDk;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
+  drawHat(ctx, cx, cy, r, appearance.hat, color, colorDk, now);
+  if (appearance.accessory === 'blush') drawBlush(ctx, cx, cy, r, angle);
+  drawEyes(ctx, cx, cy, r, angle, appearance.eyes);
+  if (appearance.accessory === 'scar') drawScar(ctx, cx, cy, r, angle);
+}
 
-  // Name label
-  const label = isMe ? `${player.displayName} ★` : player.displayName;
-  ctx.font         = `bold 11px 'Outfit', system-ui, sans-serif`;
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'bottom';
-  ctx.fillStyle    = 'rgba(30,41,59,0.55)';
-  ctx.fillText(label, cx + 1, cy - r - 3);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(label, cx, cy - r - 4);
+// ─── Hat ─────────────────────────────────────────────────────────────────────
+
+function drawHat(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, r: number,
+  style: HatStyle,
+  color: string, colorDk: string,
+  now: number,
+): void {
+  if (style === 'none') return;
+  const top = cy - r; // top edge of the body circle
+
+  switch (style) {
+    case 'cap': {
+      const cr = r * 0.68;
+      // Dome
+      ctx.beginPath();
+      ctx.arc(cx, top, cr, Math.PI, 0, false);
+      ctx.fillStyle = colorDk;
+      ctx.fill();
+      // Brim strip
+      ctx.fillStyle = '#1E293B';
+      ctx.fillRect(cx - cr * 1.2, top - r * 0.07, cr * 2.4, r * 0.13);
+      break;
+    }
+    case 'beanie': {
+      const br = r * 0.68;
+      ctx.beginPath();
+      ctx.arc(cx, top, br, Math.PI, 0, false);
+      ctx.fillStyle = colorDk;
+      ctx.fill();
+      ctx.strokeStyle = '#1E293B';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Stripes (clipped to dome)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, top, br, Math.PI, 0, false);
+      ctx.clip();
+      for (let i = 1; i <= 3; i++) {
+        ctx.fillStyle = 'rgba(255,255,255,0.28)';
+        ctx.fillRect(cx - br, top - br + br * 0.22 * i, br * 2, br * 0.1);
+      }
+      ctx.restore();
+      // Pom
+      ctx.beginPath();
+      ctx.arc(cx, top - br, r * 0.13, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = colorDk;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      break;
+    }
+    case 'crown': {
+      const ph = r * 0.5,  hw = r * 0.75;
+      ctx.beginPath();
+      ctx.moveTo(cx - hw,           top);
+      ctx.lineTo(cx - hw * 0.55,    top - ph * 0.6);
+      ctx.lineTo(cx - hw * 0.18,    top - ph * 0.12);
+      ctx.lineTo(cx,                top - ph);
+      ctx.lineTo(cx + hw * 0.18,    top - ph * 0.12);
+      ctx.lineTo(cx + hw * 0.55,    top - ph * 0.6);
+      ctx.lineTo(cx + hw,           top);
+      ctx.closePath();
+      ctx.fillStyle = '#FBBF24';
+      ctx.fill();
+      ctx.strokeStyle = '#92400E';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Gems
+      for (const [gx, gy] of [
+        [cx,          top - ph + r * 0.06],
+        [cx - hw * 0.55, top - ph * 0.6 + r * 0.04],
+        [cx + hw * 0.55, top - ph * 0.6 + r * 0.04],
+      ] as [number, number][]) {
+        ctx.beginPath();
+        ctx.arc(gx, gy, r * 0.065, 0, Math.PI * 2);
+        ctx.fillStyle = '#DC2626';
+        ctx.fill();
+      }
+      break;
+    }
+    case 'antenna': {
+      const bob   = Math.sin(now / 320) * r * 0.07;
+      const stemH = r * 0.55;
+      const tipR  = r * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(cx, top);
+      ctx.lineTo(cx + bob, top - stemH);
+      ctx.strokeStyle = '#1E293B';
+      ctx.lineWidth = r * 0.07;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + bob, top - stemH - tipR, tipR, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = colorDk;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      break;
+    }
+  }
+}
+
+// ─── Eyes ─────────────────────────────────────────────────────────────────────
+
+function drawEyes(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, r: number,
+  angle: number,
+  style: EyeStyle,
+): void {
+  // Eye positions in local "facing right" frame: (fx, ±fy).
+  // Rotated to world space by the facing angle.
+  //   eye0  →  upper side  →  local (fx, -fy)
+  //   eye1  →  lower side  →  local (fx, +fy)
+  const fx = r * 0.38, fy = r * 0.22;
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+  const eyes: [number, number][] = [
+    [cx + fx * cosA + fy * sinA, cy + fx * sinA - fy * cosA],
+    [cx + fx * cosA - fy * sinA, cy + fx * sinA + fy * cosA],
+  ];
+
+  switch (style) {
+    case 'dot': {
+      ctx.fillStyle = '#1E293B';
+      for (const [ex, ey] of eyes) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, r * 0.078, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case 'cute': {
+      const er = r * 0.12;
+      for (const [ex, ey] of eyes) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, er, 0, Math.PI * 2);
+        ctx.fillStyle = '#1E293B';
+        ctx.fill();
+        // Shine highlight
+        ctx.beginPath();
+        ctx.arc(ex - er * 0.3, ey - er * 0.3, er * 0.34, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fill();
+      }
+      break;
+    }
+    case 'angry': {
+      // Squished horizontal slits (screen-space, always horizontal — readable in any direction)
+      for (const [ex, ey] of eyes) {
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.scale(1.6, 0.38);
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.09, 0, Math.PI * 2);
+        ctx.fillStyle = '#1E293B';
+        ctx.fill();
+        ctx.restore();
+      }
+      // V-shaped brows above each eye, tilted inward
+      // "Above" here means offset toward the back of the head (opposite facing)
+      const bLen = r * 0.14;
+      for (let i = 0; i < 2; i++) {
+        const [ex, ey] = eyes[i]!;
+        // Perpendicular to facing, sign flips per eye
+        const perpSign = i === 0 ? 1 : -1;
+        const perpX = -sinA * perpSign, perpY = cosA * perpSign;
+        // Brow hovers slightly behind+above eye
+        const baseX = ex - cosA * r * 0.07;
+        const baseY = ey - sinA * r * 0.07;
+        // Outer end: away from center, slightly further back
+        const ox = baseX + perpX * bLen * 0.6 - cosA * bLen * 0.2;
+        const oy = baseY + perpY * bLen * 0.6 - sinA * bLen * 0.2;
+        // Inner end: toward center line
+        const ix = baseX - perpX * bLen * 0.4 + cosA * bLen * 0.1;
+        const iy = baseY - perpY * bLen * 0.4 + sinA * bLen * 0.1;
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.lineTo(ix, iy);
+        ctx.strokeStyle = '#1E293B';
+        ctx.lineWidth = r * 0.07;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'sleepy': {
+      // Half-circle (upper half), flat side pointing toward body center
+      // Rotate so flat side faces "inward" (opposite facing direction)
+      for (const [ex, ey] of eyes) {
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate(angle + Math.PI); // flat faces back → open side faces forward
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.1, Math.PI, 0, false);
+        ctx.closePath();
+        ctx.fillStyle = '#1E293B';
+        ctx.fill();
+        ctx.restore();
+        // Tiny highlight on open side
+        ctx.beginPath();
+        ctx.arc(ex + cosA * r * 0.02, ey + sinA * r * 0.02, r * 0.03, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fill();
+      }
+      break;
+    }
+  }
+}
+
+// ─── Accessories ──────────────────────────────────────────────────────────────
+
+function drawBlush(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, r: number,
+  angle: number,
+): void {
+  // Two pink cheek patches at ±50° from the facing direction, ~0.45r out
+  const dist   = r * 0.45;
+  const blushR = r * 0.15;
+  for (const offset of [-Math.PI / 3.6, Math.PI / 3.6]) {
+    const bx = cx + Math.cos(angle + offset) * dist;
+    const by = cy + Math.sin(angle + offset) * dist;
+    ctx.beginPath();
+    ctx.arc(bx, by, blushR, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(244,114,182,0.48)';
+    ctx.fill();
+  }
+}
+
+function drawScar(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, r: number,
+  angle: number,
+): void {
+  // Short diagonal line on the face, positioned in the facing direction
+  const fx = Math.cos(angle) * r * 0.22;
+  const fy = Math.sin(angle) * r * 0.22;
+  ctx.beginPath();
+  ctx.moveTo(cx + fx - r * 0.08, cy + fy - r * 0.09);
+  ctx.lineTo(cx + fx + r * 0.06, cy + fy + r * 0.08);
+  ctx.strokeStyle = '#DC2626';
+  ctx.lineWidth = r * 0.058;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+}
+
+// ─── Customize-panel preview ──────────────────────────────────────────────────
+
+/**
+ * Renders a standalone player character to a canvas element.
+ * Used by the customize panel — called inside a requestAnimationFrame loop.
+ */
+export function drawPlayerPreview(
+  canvas: HTMLCanvasElement,
+  appearance: PlayerAppearance,
+  slotIndex: number,
+  facing: Direction = Direction.DOWN,
+): void {
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cx      = canvas.width / 2;
+  const cy      = canvas.height / 2 + 8; // shift down slightly so hat has headroom
+  const r       = Math.min(canvas.width, canvas.height) * 0.29;
+  const color   = PLAYER_COLORS[slotIndex   % PLAYER_COLORS.length]    ?? '#8B5CF6';
+  const colorDk = PLAYER_COLORS_DK[slotIndex % PLAYER_COLORS_DK.length] ?? '#6D28D9';
+  drawCharacter(ctx, cx, cy, r, color, colorDk, appearance, facing, Date.now());
 }

@@ -59,8 +59,9 @@ export const ASSET_REGISTRY = {
     crop: { sx: 0, sy: 0, sw: 722, sh: 722 },
   },
   bombPlain: {
-    kind: 'plain',
-    path: '/sprites/new/bomb.png',
+    kind: 'cropped',
+    path: '/sprites/new/bomb-clean.png',
+    crop: { sx: 0, sy: 0, sw: 855, sh: 855 },
   },
   bombSheet: {
     kind:       'sheet',
