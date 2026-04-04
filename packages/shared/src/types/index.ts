@@ -149,7 +149,7 @@ export interface C2SPlayerInput {
 export interface ClientToServerEvents {
   'room:create': (payload: C2SRoomCreate) => void;
   'room:join': (payload: C2SRoomJoin) => void;
-  'room:start': () => void;
+  'room:start': (payload?: { skipCountdown?: boolean }) => void;
   'room:leave': () => void;
   'player:input': (payload: C2SPlayerInput) => void;
   'latency:ping': (payload: { clientTime: number }) => void;

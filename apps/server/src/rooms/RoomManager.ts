@@ -74,11 +74,19 @@ export class RoomManager {
     return this.toRoomState(room);
   }
 
-  startGame(roomId: string, requesterId: string): void {
+  startGame(roomId: string, requesterId: string, skipCountdown = false): void {
     const room = this.rooms.get(roomId);
     if (!room) throw new Error('Room not found');
     if (room.creatorId !== requesterId) throw new Error('Only the room creator can start the game');
     if (room.status !== RoomStatus.WAITING) throw new Error('Room is not in WAITING state');
+
+    if (skipCountdown) {
+      room.status = RoomStatus.STARTING;
+      room.countdownEndsAt = Date.now();
+      this.io.to(roomId).emit('room:state', this.toRoomState(room));
+      this.launchGame(room);
+      return;
+    }
 
     room.status = RoomStatus.STARTING;
     room.countdownEndsAt = Date.now() + COUNTDOWN_DURATION_MS;

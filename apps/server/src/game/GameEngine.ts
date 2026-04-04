@@ -356,6 +356,15 @@ export class GameEngine {
 
     const statePlayer = this.state.players[playerId];
     if (statePlayer) statePlayer.activeBombs = sp.activeBombs;
+
+    // Any other player whose hitbox already overlaps this tile must also be
+    // able to walk off it — otherwise they get pinned against the new bomb.
+    for (const [otherId, otherSp] of this.serverPlayers) {
+      if (otherId === playerId || !otherSp.alive) continue;
+      if (this.hitboxOverlapsTile(otherSp.pixelX, otherSp.pixelY, tx, ty)) {
+        otherSp.passableBombs.add(bomb.id);
+      }
+    }
   }
 
   // ─── Bomb detonation ─────────────────────────────────────────────────────────
