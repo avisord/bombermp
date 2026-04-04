@@ -1,4 +1,7 @@
+import { Direction } from '@bombermp/shared';
 import type { RoomState, RoomPlayer, PublicRoomInfo } from '@bombermp/shared';
+import type { PlayerAppearance } from '../game/appearance.js';
+import { drawPlayerPreview } from '../game/renderer.js';
 import { iconPath } from '../assets/registry.js';
 
 // ─── Design constants ─────────────────────────────────────────────────────────
@@ -21,176 +24,270 @@ function escHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// ─── Lobby ────────────────────────────────────────────────────────────────────
+// ─── Lobby (slide navigator) ─────────────────────────────────────────────────
+
+const NAME_ADJS  = ['Red','Blue','Fast','Cool','Bold','Dark','Wild','Swift','Brave','Chill'];
+const NAME_NOUNS = ['Fox','Tiger','Eagle','Wolf','Bear','Panda','Shark','Dragon','Hawk','Lion'];
+function randomName(): string {
+  const a = NAME_ADJS[Math.floor(Math.random() * NAME_ADJS.length)]!;
+  const n = NAME_NOUNS[Math.floor(Math.random() * NAME_NOUNS.length)]!;
+  return a + n;
+}
 
 export interface ShowLobbyOptions {
   storedName: string | null;
+  appearance: PlayerAppearance;
   onCreate: (name: string) => void;
   onJoinPrivate: (roomId: string, name: string) => void;
   onJoinPublic: (roomId: string, name: string) => void;
   onRequestRoomList: () => void;
+  onNameSave: (name: string) => void;
   onCustomize?: () => void;
   prefillRoomId?: string;
 }
+
+// ─── (removed variant stubs — now replaced by slide navigator below) ─────────
 
 export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
   clear(root);
   root.style.display = 'flex';
   injectStyles();
 
-  root.innerHTML = `
-    <!-- Decorative floating shapes -->
-    <div class="bmp-dec bmp-dec--circle-yellow" aria-hidden="true"></div>
-    <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
-    <div class="bmp-dec bmp-dec--dots"          aria-hidden="true"></div>
+  type Slide = 'home' | 'browse' | 'join';
+  let currentSlide: Slide = options.prefillRoomId ? 'join' : 'home';
+  let playerName = options.storedName ?? randomName();
 
-    <!-- Logo -->
-    <div class="bmp-logo">
-      <img class="bmp-logo__bomb" src="${iconPath('hudBombIcon')}" alt="Bomb">
-      <h1 class="bmp-logo__text">BomberMP</h1>
-    </div>
-
-    <!-- Name panel -->
-    <div class="bmp-card">
-      <div class="bmp-card__header bmp-card__header--violet">
-        <span class="bmp-card__icon" aria-hidden="true">👤</span>
-        <h2 class="bmp-card__title">Your Name</h2>
-      </div>
-      <div class="bmp-card__body">
-        <div class="bmp-field">
-          <label class="bmp-label" for="player-name">Display name</label>
-          <input class="bmp-input" id="player-name" type="text"
-            placeholder="e.g. PlayerOne" maxlength="32" autocomplete="off" />
-        </div>
-      </div>
-    </div>
-
-    <!-- Create Room panel -->
-    <div class="bmp-card">
-      <div class="bmp-card__header bmp-card__header--yellow">
-        <span class="bmp-card__icon" aria-hidden="true">🏠</span>
-        <h2 class="bmp-card__title">Create Room</h2>
-      </div>
-      <div class="bmp-card__body">
-        <button class="bmp-btn bmp-btn--primary" id="create-btn">
-          Create Room
-          <span class="bmp-btn__arrow" aria-hidden="true">→</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Join Public Room panel -->
-    <div class="bmp-card">
-      <div class="bmp-card__header bmp-card__header--green">
-        <span class="bmp-card__icon" aria-hidden="true">🌐</span>
-        <h2 class="bmp-card__title">Join Public Room</h2>
-        <button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="refresh-rooms-btn"
-          style="margin-left:auto">Refresh</button>
-      </div>
-      <div class="bmp-card__body" style="padding-top:0.7rem;padding-bottom:0.7rem">
-        <ul class="bmp-room-list" id="public-rooms-list">
-          <li class="bmp-room-list__empty">Loading rooms…</li>
-        </ul>
-      </div>
-    </div>
-
-    <!-- Join Private Room panel -->
-    <div class="bmp-card">
-      <div class="bmp-card__header bmp-card__header--pink">
-        <span class="bmp-card__icon" aria-hidden="true">🔒</span>
-        <h2 class="bmp-card__title">Join Private Room</h2>
-      </div>
-      <div class="bmp-card__body">
-        <div class="bmp-field">
-          <label class="bmp-label" for="join-id">Room ID</label>
-          <input class="bmp-input bmp-input--mono" id="join-id" type="text"
-            placeholder="ABCD1234" maxlength="16" autocomplete="off"
-            style="text-transform:uppercase;letter-spacing:0.12em;" />
-        </div>
-        <button class="bmp-btn bmp-btn--secondary" id="join-btn">
-          Join Room
-          <span class="bmp-btn__arrow" aria-hidden="true">→</span>
-        </button>
-      </div>
-    </div>
-
-    <button class="bmp-btn bmp-btn--ghost bmp-btn--sm" id="customize-btn"
-      style="align-self:center;gap:0.35rem">
-      🎨 Customize Character
-    </button>
-
-    <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
-  `;
-
-  const nameEl      = root.querySelector<HTMLInputElement>('#player-name')!;
-  const createBtn   = root.querySelector<HTMLButtonElement>('#create-btn')!;
-  const joinIdEl    = root.querySelector<HTMLInputElement>('#join-id')!;
-  const joinBtn     = root.querySelector<HTMLButtonElement>('#join-btn')!;
-  const publicList  = root.querySelector<HTMLUListElement>('#public-rooms-list')!;
-  const refreshBtn  = root.querySelector<HTMLButtonElement>('#refresh-rooms-btn')!;
-  const errorEl     = root.querySelector<HTMLParagraphElement>('#lobby-error')!;
-
-  if (options.storedName) nameEl.value = options.storedName;
-
-  function setError(msg: string): void { errorEl.textContent = msg; }
-
-  function getNameOrError(): string | null {
-    const name = nameEl.value.trim();
-    if (!name) { setError('Enter your name first'); nameEl.focus(); return null; }
-    return name;
+  function go(slide: Slide): void {
+    currentSlide = slide;
+    render();
+    if (slide === 'browse') options.onRequestRoomList();
   }
 
-  createBtn.addEventListener('click', () => {
-    const name = getNameOrError();
-    if (!name) return;
-    setError('');
-    createBtn.disabled = true;
-    options.onCreate(name);
-  });
-
-  joinBtn.addEventListener('click', () => {
-    const id   = joinIdEl.value.trim().toUpperCase();
-    const name = getNameOrError();
-    if (!id)   { setError('Enter a room ID'); return; }
-    if (!name) return;
-    setError('');
-    joinBtn.disabled = true;
-    options.onJoinPrivate(id, name);
-  });
-
-  publicList.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.bmp-room-list__join');
-    if (!btn) return;
-    const roomId = btn.dataset['roomId'];
-    if (!roomId) return;
-    const name = getNameOrError();
-    if (!name) return;
-    setError('');
-    btn.disabled = true;
-    options.onJoinPublic(roomId, name);
-  });
-
-  refreshBtn.addEventListener('click', () => {
-    publicList.innerHTML = '<li class="bmp-room-list__empty">Loading rooms…</li>';
-    options.onRequestRoomList();
-  });
-
-  nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') createBtn.click(); });
-  joinIdEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinBtn.click(); });
-
-  root.querySelector<HTMLButtonElement>('#customize-btn')?.addEventListener('click', () => {
-    options.onCustomize?.();
-  });
-
-  if (options.prefillRoomId) {
-    joinIdEl.value = options.prefillRoomId;
-    joinBtn.focus();
-  } else {
-    nameEl.focus();
+  function setError(msg: string): void {
+    const el = root.querySelector<HTMLParagraphElement>('#lobby-error');
+    if (el) el.textContent = msg;
   }
 
-  // Trigger initial room list fetch
-  options.onRequestRoomList();
+  function render(): void {
+    clear(root);
+    switch (currentSlide) {
+      case 'home':   renderHome();   break;
+      case 'browse': renderBrowse(); break;
+      case 'join':   renderJoin();   break;
+    }
+  }
+
+  // ── Home slide ──────────────────────────────────────────────────────────────
+  function renderHome(): void {
+    const bombIcon = iconPath('hudBombIcon');
+    root.innerHTML = `
+      <div class="bmp-dec bmp-dec--circle-yellow" aria-hidden="true"></div>
+      <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
+
+      <div class="bmp-logo bmp-logo--sm">
+        <img class="bmp-logo__bomb" src="${bombIcon}" alt="Bomb">
+        <h1 class="bmp-logo__text">BomberMP</h1>
+      </div>
+
+      <!-- Identity card: name (left) + avatar (right) -->
+      <div class="bmp-card" style="width:100%">
+        <div class="bmp-home-identity">
+          <div class="bmp-home-name-side">
+            <span class="bmp-home-label">Player</span>
+            <div class="bmp-home-name-view" id="name-view">
+              <span class="bmp-home-name-text" id="name-text">${escHtml(playerName)}</span>
+              <button class="bmp-icon-btn" id="name-edit-btn" title="Edit name">✏️</button>
+            </div>
+            <div class="bmp-home-name-edit bmp-hidden" id="name-edit">
+              <input class="bmp-input bmp-home-name-input" id="name-input"
+                value="${escHtml(playerName)}" maxlength="32" autocomplete="off" />
+              <button class="bmp-icon-btn bmp-icon-btn--confirm" id="name-save-btn" title="Save">✓</button>
+            </div>
+          </div>
+          <div class="bmp-home-avatar-side">
+            <div class="bmp-home-avatar-wrap">
+              <canvas id="home-avatar" width="72" height="72"></canvas>
+              <button class="bmp-icon-btn bmp-icon-btn--avatar" id="avatar-edit-btn" title="Customize">✏️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Play card -->
+      <div class="bmp-card" style="width:100%">
+        <div class="bmp-card__header bmp-card__header--violet">
+          <h2 class="bmp-card__title">Play</h2>
+        </div>
+        <div class="bmp-card__body" style="gap:0.4rem;padding:0.75rem 0.9rem">
+          <button class="bmp-play-option" id="create-btn">
+            <span class="bmp-play-option__icon">🏠</span>
+            <div class="bmp-play-option__text">
+              <span class="bmp-play-option__title">Create Room</span>
+              <span class="bmp-play-option__sub">Host a new game</span>
+            </div>
+            <span class="bmp-play-option__arrow">→</span>
+          </button>
+          <button class="bmp-play-option" id="browse-btn">
+            <span class="bmp-play-option__icon">🌐</span>
+            <div class="bmp-play-option__text">
+              <span class="bmp-play-option__title">Browse Rooms</span>
+              <span class="bmp-play-option__sub">Join a public game</span>
+            </div>
+            <span class="bmp-play-option__arrow">→</span>
+          </button>
+          <button class="bmp-play-option" id="join-private-btn">
+            <span class="bmp-play-option__icon">🔒</span>
+            <div class="bmp-play-option__text">
+              <span class="bmp-play-option__title">Join Room</span>
+              <span class="bmp-play-option__sub">Enter room ID</span>
+            </div>
+            <span class="bmp-play-option__arrow">→</span>
+          </button>
+        </div>
+      </div>
+
+      <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
+    `;
+
+    // Draw avatar preview
+    const avatarCanvas = root.querySelector<HTMLCanvasElement>('#home-avatar')!;
+    drawPlayerPreview(avatarCanvas, options.appearance, 0, Direction.RIGHT);
+
+    // Inline name edit
+    const nameView    = root.querySelector<HTMLDivElement>('#name-view')!;
+    const nameEditDiv = root.querySelector<HTMLDivElement>('#name-edit')!;
+    const nameTextEl  = root.querySelector<HTMLSpanElement>('#name-text')!;
+    const nameInput   = root.querySelector<HTMLInputElement>('#name-input')!;
+
+    function enterEditMode(): void {
+      nameView.classList.add('bmp-hidden');
+      nameEditDiv.classList.remove('bmp-hidden');
+      nameInput.focus();
+      nameInput.select();
+    }
+
+    function saveName(): void {
+      const trimmed = nameInput.value.trim();
+      if (!trimmed) return;
+      playerName = trimmed;
+      options.onNameSave(trimmed);
+      nameTextEl.textContent = trimmed;
+      nameEditDiv.classList.add('bmp-hidden');
+      nameView.classList.remove('bmp-hidden');
+    }
+
+    root.querySelector('#name-edit-btn')!.addEventListener('click', enterEditMode);
+    root.querySelector('#name-save-btn')!.addEventListener('click', saveName);
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveName();
+      if (e.key === 'Escape') {
+        nameInput.value = playerName;
+        nameEditDiv.classList.add('bmp-hidden');
+        nameView.classList.remove('bmp-hidden');
+      }
+    });
+
+    root.querySelector('#avatar-edit-btn')!.addEventListener('click', () => options.onCustomize?.());
+
+    root.querySelector('#create-btn')!.addEventListener('click', () => {
+      setError('');
+      options.onCreate(playerName);
+    });
+    root.querySelector('#browse-btn')!.addEventListener('click', () => go('browse'));
+    root.querySelector('#join-private-btn')!.addEventListener('click', () => go('join'));
+  }
+
+  // ── Browse slide ────────────────────────────────────────────────────────────
+  function renderBrowse(): void {
+    root.innerHTML = `
+      <div class="bmp-slide-nav">
+        <button class="bmp-back-btn" id="back-btn">← Back</button>
+        <h2 class="bmp-slide-title">Public Rooms</h2>
+        <button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="refresh-rooms-btn">↻ Refresh</button>
+      </div>
+
+      <div class="bmp-card" style="width:100%">
+        <div class="bmp-card__body" style="padding-top:0.7rem;padding-bottom:0.7rem">
+          <ul class="bmp-room-list" id="public-rooms-list">
+            <li class="bmp-room-list__empty">Loading rooms…</li>
+          </ul>
+        </div>
+      </div>
+
+      <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
+    `;
+
+    root.querySelector('#back-btn')!.addEventListener('click', () => go('home'));
+    root.querySelector('#refresh-rooms-btn')!.addEventListener('click', () => {
+      const list = root.querySelector<HTMLUListElement>('#public-rooms-list');
+      if (list) list.innerHTML = '<li class="bmp-room-list__empty">Loading rooms…</li>';
+      options.onRequestRoomList();
+    });
+    root.querySelector('#public-rooms-list')!.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.bmp-room-list__join');
+      if (!btn) return;
+      const roomId = btn.dataset['roomId'];
+      if (!roomId) return;
+      setError('');
+      btn.disabled = true;
+      options.onJoinPublic(roomId, playerName);
+    });
+  }
+
+  // ── Join private slide ──────────────────────────────────────────────────────
+  function renderJoin(): void {
+    root.innerHTML = `
+      <div class="bmp-slide-nav">
+        <button class="bmp-back-btn" id="back-btn">← Back</button>
+        <h2 class="bmp-slide-title">Join Private Room</h2>
+        <div></div>
+      </div>
+
+      <div class="bmp-card" style="width:100%;max-width:380px">
+        <div class="bmp-card__header bmp-card__header--pink">
+          <span class="bmp-card__icon">🔒</span>
+          <h2 class="bmp-card__title">Enter Room ID</h2>
+        </div>
+        <div class="bmp-card__body">
+          <div class="bmp-field">
+            <label class="bmp-label" for="join-id">Room ID</label>
+            <input class="bmp-input bmp-input--mono" id="join-id" type="text"
+              placeholder="ABCD1234" maxlength="16" autocomplete="off"
+              style="text-transform:uppercase;letter-spacing:0.12em;" />
+          </div>
+          <button class="bmp-btn bmp-btn--secondary" id="join-btn">
+            Join Room <span class="bmp-btn__arrow">→</span>
+          </button>
+        </div>
+      </div>
+
+      <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
+    `;
+
+    const joinIdEl = root.querySelector<HTMLInputElement>('#join-id')!;
+    const joinBtn  = root.querySelector<HTMLButtonElement>('#join-btn')!;
+
+    if (options.prefillRoomId) {
+      joinIdEl.value = options.prefillRoomId;
+      joinBtn.focus();
+    } else {
+      joinIdEl.focus();
+    }
+
+    function submit(): void {
+      const id = joinIdEl.value.trim().toUpperCase();
+      if (!id) { setError('Enter a room ID'); return; }
+      setError('');
+      joinBtn.disabled = true;
+      options.onJoinPrivate(id, playerName);
+    }
+
+    joinBtn.addEventListener('click', submit);
+    joinIdEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+    root.querySelector('#back-btn')!.addEventListener('click', () => go('home'));
+  }
+
+  render();
 }
 
 export function updatePublicRoomsList(root: HTMLElement, rooms: PublicRoomInfo[]): void {
@@ -989,6 +1086,154 @@ function injectStyles(): void {
     @keyframes bmp-pop-in {
       0%   { transform: scale(0.55); opacity: 0; }
       100% { transform: scale(1);    opacity: 1; }
+    }
+
+    /* ── Home identity section ─────────────────────────────────── */
+    .bmp-home-identity {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.2rem;
+    }
+    .bmp-home-name-side {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 0;
+    }
+    .bmp-home-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94A3B8;
+    }
+    .bmp-home-name-view {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .bmp-home-name-text {
+      font-family: 'Outfit', system-ui, sans-serif;
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: #1E293B;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bmp-home-name-edit {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .bmp-home-name-input {
+      font-size: 1rem !important;
+      font-weight: 700 !important;
+      padding: 0.3rem 0.55rem !important;
+      flex: 1;
+    }
+    .bmp-icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 0.2rem 0.25rem;
+      border-radius: 6px;
+      line-height: 1;
+      color: #94A3B8;
+      transition: background 0.12s, color 0.12s;
+      flex-shrink: 0;
+    }
+    .bmp-icon-btn:hover { background: #F1F5F9; color: #1E293B; }
+    .bmp-icon-btn--confirm { color: #10B981; font-size: 1.05rem; }
+    .bmp-icon-btn--confirm:hover { background: #D1FAE5; color: #059669; }
+    .bmp-home-avatar-side { flex-shrink: 0; }
+    .bmp-home-avatar-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .bmp-home-avatar-wrap canvas {
+      border-radius: 12px;
+      border: 2px solid #E2E8F0;
+      background: #FFFDF5;
+      display: block;
+    }
+    .bmp-icon-btn--avatar {
+      position: absolute;
+      bottom: -6px;
+      right: -6px;
+      background: #FFFFFF;
+      border: 1.5px solid #1E293B !important;
+      font-size: 0.65rem;
+      padding: 0.15rem 0.3rem;
+      border-radius: 6px;
+      box-shadow: 2px 2px 0 #1E293B;
+      color: #1E293B;
+    }
+    .bmp-icon-btn--avatar:hover { background: #EDE9FE; }
+    .bmp-hidden { display: none !important; }
+
+    /* ── Play options ───────────────────────────────────────────── */
+    .bmp-play-option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      border: 2px solid #E2E8F0;
+      border-radius: 12px;
+      background: #FAFAFA;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s, transform 0.15s, box-shadow 0.15s;
+    }
+    .bmp-play-option:hover {
+      border-color: #8B5CF6;
+      background: #FFFFFF;
+      transform: translate(-1px, -1px);
+      box-shadow: 3px 3px 0 #1E293B;
+    }
+    .bmp-play-option:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 #1E293B; }
+    .bmp-play-option__icon { font-size: 1.35rem; flex-shrink: 0; }
+    .bmp-play-option__text { flex: 1; display: flex; flex-direction: column; gap: 0.08rem; }
+    .bmp-play-option__title { font-weight: 700; font-size: 0.88rem; color: #1E293B; }
+    .bmp-play-option__sub { font-size: 0.72rem; color: #94A3B8; }
+    .bmp-play-option__arrow { font-size: 0.95rem; color: #CBD5E1; flex-shrink: 0; }
+
+    /* ── Slide navigation header ────────────────────────────────── */
+    .bmp-slide-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      gap: 0.5rem;
+    }
+    .bmp-back-btn {
+      background: none;
+      border: 2px solid #1E293B;
+      border-radius: 9999px;
+      padding: 0.38rem 0.85rem;
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      font-weight: 700;
+      font-size: 0.8rem;
+      cursor: pointer;
+      color: #1E293B;
+      white-space: nowrap;
+      transition: background 0.12s;
+    }
+    .bmp-back-btn:hover { background: #F1F5F9; }
+    .bmp-slide-title {
+      font-family: 'Outfit', system-ui, sans-serif;
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: #1E293B;
+      margin: 0;
+      text-align: center;
     }
 
     /* ── Responsive ────────────────────────────────────────────── */

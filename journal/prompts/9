@@ -1,0 +1,60 @@
+feat: new items and bombs:
+
+- items:
+  - bomb:
+    - fire bomb:
+      - name: fire bomb (current bomb behaviour)
+      - functionality:
+        - bomb will explode in some time after user drops it
+        - explosion will react upto the <range> tiles
+        - after explosion flames will be seen for some time and will kill players if they are caught in the flames
+        - explosion will hapend in all the open directions
+        - if closed by a breakable wall, one of the wall will be destroyed in the explosion
+        - no undestroyable walls will be destroyed in the explosion
+        - all the players in between will loose life/die in the explosion
+      - dependencies:
+        - <range> tiles: range is increased by the bumb ups player have taken (default: 2)
+
+    - ice bomb:
+      - name: ice bomb (new bomb)
+      - functionality:
+        - bomb will explode upto <range> tiles.
+        - explosion will occur in all the open direction from it (only in straight line no turns)
+        - all the players, walls will be frozen in the explosion
+        - after <seconds> seconds, all the players will be unfrozen and can move freely
+        - explosion will createa a temprary frozen block for <frozen> time
+        - after <frozen> time, the frozen block will be gone and the players will be able to move freely
+        - meanwhile if a normal bomb is dropped near anything which is frozen, all frozen players, walls will be destroyed
+        - if a breakable wall is destroyed, all the players, walls will be destroyed
+      - dependencies:
+        - <range> tiles: range is increased by the bumb ups player have taken (default: 2)
+        - <seconds> seconds: constant right now (default: 4s)
+        - <frozen> time: constant right now (default: 2s)
+
+    - rolling bomb:
+      - name: rolling bomb (new bomb)
+      - funtionality:
+        - bomb will be a normal bomb, but with ability to roll
+        - bomb will explode upto <range> tiles.
+        - 
+
+    - chasing bomb: currently not implementing
+    - shodow bomb: currently not implementing
+
+    - confusion bomb (clearly show users what is happening)
+      - name: confusion bomb (new bomb)
+      - funcationality:
+        - look like a normal bomb
+        - player caught in explosion will be confused
+        - confusion functionality 1: 
+          - opposite direction movement
+          - user movement controls will be flipped
+          - player will be confused for <confusion seconds> seconds
+          - after <seconds> seconds, player will be able to move freely
+
+  - bomb range buff
+  - speed buff
+
+- indicators:
+  - bomb range indicator (low opacity range)
+  - bomb blast indicator (fade out/in animation)

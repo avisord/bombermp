@@ -340,10 +340,12 @@ function onConfigure(isPublic: boolean): void {
 function makeLobbyOptions(prefillRoomId?: string): ShowLobbyOptions {
   const opts: ShowLobbyOptions = {
     storedName: getStoredDisplayName(),
+    appearance: myAppearance,
     onCreate: onCreateRoom,
     onJoinPrivate: onJoinRoom,
     onJoinPublic: onJoinPublicRoom,
     onRequestRoomList: () => { if (socket.connected) socket.emit('room:list'); },
+    onNameSave: setStoredDisplayName,
     onCustomize,
   };
   if (prefillRoomId !== undefined) opts.prefillRoomId = prefillRoomId;

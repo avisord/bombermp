@@ -1,0 +1,45 @@
+feat: play / join game:
+  - ways to start a game:
+    - play (create a room): 
+      - creates a room
+      - user configure room options
+      - user wait for player if room is public
+      - if user hits play, empty space is filled by bots (bots will be added later)
+
+    - join public room:
+      - user sees a list of public rooms
+      - user can join any of the public rooms
+      - user waits for room creator to start the game
+
+    - join private room:
+      - user enters the room id
+      - user joins the room
+      - user waits for room creator to start the game
+
+    - impelementation:
+      - three screen setup:
+        1. home screen
+        2. lobby screen
+        3. game screen
+
+      - home screen:
+        - four panels:
+          - name input panel:
+            - expects a name
+            - stores in local storage
+          - create room panel
+            - exepcte nothing
+          - join public room panel
+            - expectes a choice of public rooms
+          - join private room panel
+            - expectes a room id
+
+      - lobby screen:
+        - two panels:
+          - joined player list
+            - shows a list of players
+            - leave game
+            - start game 
+          - room configuration (read/write for creator readonly for players)
+            - public / private
+            - joining link
