@@ -22,9 +22,11 @@ import {
   showLobbyError,
   showWaitingRoom,
   showGameOver,
+  updatePublicRoomsList,
   hideUI,
   showUI,
 } from './ui/index.js';
+import type { ShowLobbyOptions } from './ui/index.js';
 import {
   initHUD,
   showHUD,
@@ -162,8 +164,9 @@ socket.on('room:state', (state: RoomState) => {
         () => {
           socket.emit('room:leave');
           clearRoomHash();
-          showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
+          showLobby(uiRoot, makeLobbyOptions());
         },
+        onConfigure,
       );
       if (state.status === RoomStatus.STARTING && state.countdownEndsAt) {
         tickCountdown(state.countdownEndsAt, state);
@@ -195,8 +198,9 @@ socket.on('room:state', (state: RoomState) => {
           () => {
             socket.emit('room:leave');
             clearRoomHash();
-            showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
+            showLobby(uiRoot, makeLobbyOptions());
           },
+          onConfigure,
           true, // gameInProgress
         );
       }
@@ -270,6 +274,10 @@ socket.on('game:over', ({ winnerId }) => {
   }, EXPLOSION_DURATION_MS + 100);
 });
 
+socket.on('rooms:list', ({ rooms }) => {
+  updatePublicRoomsList(uiRoot, rooms);
+});
+
 socket.on('latency:pong', ({ clientTime }: { clientTime: number }) => {
   rtt = Date.now() - clientTime;
   updateHUDLatency(rtt);
@@ -287,6 +295,7 @@ socket.on('error', ({ message }: { message: string }) => {
 
 socket.on('connect', () => {
   console.log('[socket] connected:', socket.id);
+  socket.emit('room:list');
 });
 
 socket.on('disconnect', (reason) => {
@@ -297,7 +306,7 @@ socket.on('disconnect', (reason) => {
   if (isTestMode) {
     uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Disconnected. Reconnecting\u2026</p>';
   } else {
-    showLobby(uiRoot, onCreateRoom, onJoinRoom);
+    showLobby(uiRoot, makeLobbyOptions());
   }
 });
 
@@ -319,11 +328,33 @@ function onJoinRoom(roomId: string, name: string): void {
   socket.emit('room:join', { roomId, displayName: name });
 }
 
+function onJoinPublicRoom(roomId: string, name: string): void {
+  setStoredDisplayName(name);
+  socket.emit('room:join', { roomId, displayName: name });
+}
+
+function onConfigure(isPublic: boolean): void {
+  socket.emit('room:configure', { isPublic });
+}
+
+function makeLobbyOptions(prefillRoomId?: string): ShowLobbyOptions {
+  const opts: ShowLobbyOptions = {
+    storedName: getStoredDisplayName(),
+    onCreate: onCreateRoom,
+    onJoinPrivate: onJoinRoom,
+    onJoinPublic: onJoinPublicRoom,
+    onRequestRoomList: () => { if (socket.connected) socket.emit('room:list'); },
+    onCustomize,
+  };
+  if (prefillRoomId !== undefined) opts.prefillRoomId = prefillRoomId;
+  return opts;
+}
+
 function onCustomize(): void {
   showCustomize(uiRoot, myAppearance, 0, (newAppearance) => {
     myAppearance = newAppearance;
     saveAppearance(newAppearance);
-    showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
+    showLobby(uiRoot, makeLobbyOptions());
   });
 }
 
@@ -362,10 +393,10 @@ if (isTestMode) {
   socket.once('connect', () => {
     socket.emit('room:join', { roomId: hashRoomId, displayName: storedName });
   });
-  showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
+  showLobby(uiRoot, makeLobbyOptions());
 } else if (hashRoomId) {
-  showLobby(uiRoot, onCreateRoom, onJoinRoom, hashRoomId, onCustomize);
+  showLobby(uiRoot, makeLobbyOptions(hashRoomId));
 } else {
-  showLobby(uiRoot, onCreateRoom, onJoinRoom, undefined, onCustomize);
+  showLobby(uiRoot, makeLobbyOptions());
 }
 socket.connect();

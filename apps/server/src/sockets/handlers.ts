@@ -33,7 +33,7 @@ export function registerHandlers(io: IoServer): void {
     console.log(`[socket] connected: ${socket.id} player=${playerId}`);
 
     // ── room:create ───────────────────────────────────────────────────────────
-    socket.on('room:create', ({ displayName }) => {
+    socket.on('room:create', ({ displayName, isPublic }) => {
       try {
         if (socket.data.roomId) {
           socket.emit('error', { message: 'Already in a room' });
@@ -41,7 +41,8 @@ export function registerHandlers(io: IoServer): void {
         }
         const name = displayName.trim().slice(0, 32) || 'Player';
         socket.data.displayName = name;
-        const state = roomManager.createRoom(playerId, name, socket.id);
+        const publicFlag = isPublic ?? true;
+        const state = roomManager.createRoom(playerId, name, socket.id, publicFlag);
         socket.data.roomId = state.roomId;
         void socket.join(state.roomId);
         socket.emit('room:state', state);
@@ -67,6 +68,22 @@ export function registerHandlers(io: IoServer): void {
         upsertPlayer(playerId, name);
       } catch (err: unknown) {
         socket.emit('error', { message: errMsg(err, 'Failed to join room') });
+      }
+    });
+
+    // ── room:list ─────────────────────────────────────────────────────────────
+    socket.on('room:list', () => {
+      socket.emit('rooms:list', { rooms: roomManager.listPublicRooms() });
+    });
+
+    // ── room:configure ────────────────────────────────────────────────────────
+    socket.on('room:configure', ({ isPublic }) => {
+      try {
+        const roomId = socket.data.roomId;
+        if (!roomId) { socket.emit('error', { message: 'Not in a room' }); return; }
+        roomManager.configureRoom(roomId, playerId, isPublic);
+      } catch (err: unknown) {
+        socket.emit('error', { message: errMsg(err, 'Failed to configure room') });
       }
     });
 

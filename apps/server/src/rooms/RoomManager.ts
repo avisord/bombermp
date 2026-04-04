@@ -5,7 +5,7 @@ import {
   RoomStatus,
   Direction,
 } from '@bombermp/shared';
-import type { RoomState } from '@bombermp/shared';
+import type { RoomState, PublicRoomInfo } from '@bombermp/shared';
 import type { ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData } from '@bombermp/shared';
 import { GameEngine } from '../game/GameEngine.js';
 import type { PlayerSlot } from '../game/GameEngine.js';
@@ -27,6 +27,7 @@ interface ServerRoom {
   status: RoomStatus;
   players: Map<string, ServerRoomPlayer>;
   creatorId: string;
+  isPublic: boolean;
   countdownTimer: ReturnType<typeof setTimeout> | null;
   countdownEndsAt: number | null;
   engine: GameEngine | null;
@@ -43,13 +44,14 @@ export class RoomManager {
 
   // ─── Public API ──────────────────────────────────────────────────────────────
 
-  createRoom(playerId: string, displayName: string, socketId: string): RoomState {
+  createRoom(playerId: string, displayName: string, socketId: string, isPublic = true): RoomState {
     const roomId = uuidv4().slice(0, 8).toUpperCase();
     const room: ServerRoom = {
       roomId,
       status: RoomStatus.WAITING,
       players: new Map(),
       creatorId: playerId,
+      isPublic,
       countdownTimer: null,
       countdownEndsAt: null,
       engine: null,
@@ -127,6 +129,24 @@ export class RoomManager {
       if (next) room.creatorId = next.playerId;
     }
 
+    this.io.to(roomId).emit('room:state', this.toRoomState(room));
+  }
+
+  listPublicRooms(): PublicRoomInfo[] {
+    const result: PublicRoomInfo[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.isPublic && room.status === RoomStatus.WAITING) {
+        result.push({ roomId: room.roomId, playerCount: room.players.size, maxPlayers: MAX_PLAYERS });
+      }
+    }
+    return result;
+  }
+
+  configureRoom(roomId: string, requesterId: string, isPublic: boolean): void {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new Error('Room not found');
+    if (room.creatorId !== requesterId) throw new Error('Only the room creator can configure the room');
+    room.isPublic = isPublic;
     this.io.to(roomId).emit('room:state', this.toRoomState(room));
   }
 
@@ -228,6 +248,7 @@ export class RoomManager {
       status: room.status,
       players,
       maxPlayers: MAX_PLAYERS,
+      isPublic: room.isPublic,
     };
 
     if (room.countdownEndsAt !== null) {

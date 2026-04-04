@@ -118,11 +118,18 @@ export interface RoomPlayer {
   isCreator: boolean;
 }
 
+export interface PublicRoomInfo {
+  roomId: string;
+  playerCount: number;
+  maxPlayers: number;
+}
+
 export interface RoomState {
   roomId: string;
   status: RoomStatus;
   players: RoomPlayer[];
   maxPlayers: number;
+  isPublic?: boolean;
   countdownEndsAt?: number;
   gameState?: GameState;
 }
@@ -131,6 +138,11 @@ export interface RoomState {
 
 export interface C2SRoomCreate {
   displayName: string;
+  isPublic?: boolean;
+}
+
+export interface C2SRoomConfigure {
+  isPublic: boolean;
 }
 
 export interface C2SRoomJoin {
@@ -151,6 +163,8 @@ export interface ClientToServerEvents {
   'room:join': (payload: C2SRoomJoin) => void;
   'room:start': (payload?: { skipCountdown?: boolean }) => void;
   'room:leave': () => void;
+  'room:list': () => void;
+  'room:configure': (payload: C2SRoomConfigure) => void;
   'player:input': (payload: C2SPlayerInput) => void;
   'latency:ping': (payload: { clientTime: number }) => void;
 }
@@ -158,6 +172,7 @@ export interface ClientToServerEvents {
 /** Server → Client events */
 export interface ServerToClientEvents {
   'room:state': (state: RoomState) => void;
+  'rooms:list': (payload: { rooms: PublicRoomInfo[] }) => void;
   'game:tick': (diff: GameStateDiff) => void;
   'game:over': (payload: { winnerId: string | null }) => void;
   'latency:pong': (payload: { clientTime: number; serverTime: number }) => void;
