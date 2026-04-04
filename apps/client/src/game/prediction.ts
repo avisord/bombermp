@@ -82,6 +82,16 @@ export class LocalPlayerPredictor {
   }
 
   /**
+   * Returns true if the local player's current hitbox overlaps the given tile.
+   * Used to detect when an opponent's bomb spawns on/near the local player so
+   * we can mark it passable — mirroring the server's placement logic.
+   */
+  overlapsNewBomb(tileX: number, tileY: number): boolean {
+    if (!this.active) return false;
+    return hitboxOverlapsTile(this.px, this.py, tileX, tileY);
+  }
+
+  /**
    * Called on every game:tick with the server's authoritative position.
    * Only snaps on catastrophic divergence (> 1.5 tiles) — e.g. server rejected
    * a move because the predictor walked through a wall it didn't know about.

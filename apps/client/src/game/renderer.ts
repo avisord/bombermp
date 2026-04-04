@@ -32,8 +32,7 @@ const BOMB_PULSE_URGENT_HZ = 5.5;  // pulses per second just before detonation
 // ─── Fallback palette (canvas-drawn when sprites haven't loaded) ──────────────
 
 const FALLBACK: Record<TileType, string> = {
-  [TileType.EMPTY]:     '#aad751',
-  // [TileType.EMPTY]:     '#F5F0E8',
+  [TileType.EMPTY]:     '#aad751', // light square (checkerboard uses both #aad751 and #a2d149)
   [TileType.WALL_HARD]: '#334155',
   [TileType.WALL_SOFT]: '#A78BFA',
   [TileType.BOMB]:      '#F5F0E8',
@@ -120,8 +119,10 @@ function drawTile(
   index: number,
   now: number,
 ): void {
-  // Always draw the floor underneath everything
-  ctx.fillStyle = FALLBACK[TileType.EMPTY];
+  // Always draw the floor underneath everything (checkerboard pattern)
+  const col = Math.round(x / TILE_SIZE);
+  const row = Math.round(y / TILE_SIZE);
+  ctx.fillStyle = (col + row) % 2 === 0 ? '#aad751' : '#a2d149';
   ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
 
   switch (tile) {
@@ -132,11 +133,8 @@ function drawTile(
           EMPTY_CROP.sx, EMPTY_CROP.sy, EMPTY_CROP.sw, EMPTY_CROP.sh,
           x, y, TILE_SIZE, TILE_SIZE,
         );
-      } else {
-        ctx.fillStyle = FALLBACK[TileType.EMPTY];
-        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-        ctx.lineWidth = 1;
       }
+      // checkerboard already painted as the base floor above
       break;
 
     case TileType.BOMB:

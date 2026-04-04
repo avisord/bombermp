@@ -213,7 +213,10 @@ socket.on('game:tick', (diff) => {
   // passable before the predictor sees the BOMB tile).
   if (diff.bombs) {
     for (const bomb of Object.values(diff.bombs)) {
-      if (bomb.ownerId === myPlayerId) {
+      // Mark passable if: (a) local player placed it, or (b) the bomb spawned
+      // on a tile the local player's hitbox already overlaps (opponent placed it
+      // while we were standing there — server mirrors this logic server-side).
+      if (bomb.ownerId === myPlayerId || predictor.overlapsNewBomb(bomb.position.x, bomb.position.y)) {
         predictor.addPassableBomb(bomb.position.x, bomb.position.y);
       }
     }
