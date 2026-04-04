@@ -46,6 +46,51 @@ export interface ShowLobbyOptions {
   prefillRoomId?: string;
 }
 
+// ─── HTML component helpers ───────────────────────────────────────────────────
+
+function logoHtml(): string {
+  const bombIcon = iconPath('hudBombIcon');
+  return `
+    <div class="bmp-logo bmp-logo--sm">
+      <img class="bmp-logo__bomb" src="${bombIcon}" alt="Bomb">
+      <h1 class="bmp-logo__text">BomberMP</h1>
+    </div>
+  `;
+}
+
+interface CardOpts {
+  headerClass?: string;
+  icon?: string;
+  title?: string;
+  headerExtra?: string;
+  body: string;
+  style?: string;
+}
+
+function cardHtml(opts: CardOpts): string {
+  const headerContent = opts.title
+    ? `
+      <div class="bmp-card__header${opts.headerClass ? ` ${opts.headerClass}` : ''}">
+        ${opts.icon ? `<span class="bmp-card__icon">${opts.icon}</span>` : ''}
+        <h2 class="bmp-card__title">${opts.title}</h2>
+        ${opts.headerExtra ?? ''}
+      </div>
+    `
+    : '';
+  return `
+    <div class="bmp-card"${opts.style ? ` style="${opts.style}"` : ''}>
+      ${headerContent}
+      <div class="bmp-card__body">
+        ${opts.body}
+      </div>
+    </div>
+  `;
+}
+
+function errorHtml(): string {
+  return `<p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>`;
+}
+
 // ─── (removed variant stubs — now replaced by slide navigator below) ─────────
 
 export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
@@ -79,15 +124,11 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
 
   // ── Home slide ──────────────────────────────────────────────────────────────
   function renderHome(): void {
-    const bombIcon = iconPath('hudBombIcon');
     root.innerHTML = `
       <div class="bmp-dec bmp-dec--circle-yellow" aria-hidden="true"></div>
       <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
 
-      <div class="bmp-logo bmp-logo--sm">
-        <img class="bmp-logo__bomb" src="${bombIcon}" alt="Bomb">
-        <h1 class="bmp-logo__text">BomberMP</h1>
-      </div>
+      ${logoHtml()}
 
       <!-- Identity card: name (left) + avatar (right) -->
       <div class="bmp-card" style="width:100%">
@@ -113,12 +154,11 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
         </div>
       </div>
 
-      <!-- Play card -->
-      <div class="bmp-card" style="width:100%">
-        <div class="bmp-card__header bmp-card__header--violet">
-          <h2 class="bmp-card__title">Play</h2>
-        </div>
-        <div class="bmp-card__body" style="gap:0.4rem;padding:0.75rem 0.9rem">
+      ${cardHtml({
+        headerClass: 'bmp-card__header--violet',
+        title: 'Play',
+        style: 'width:100%',
+        body: `
           <button class="bmp-play-option" id="create-btn">
             <span class="bmp-play-option__icon">🏠</span>
             <div class="bmp-play-option__text">
@@ -143,10 +183,10 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
             </div>
             <span class="bmp-play-option__arrow">→</span>
           </button>
-        </div>
-      </div>
+        `,
+      })}
 
-      <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
+      ${errorHtml()}
     `;
 
     // Draw avatar preview
@@ -200,24 +240,28 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
   // ── Browse slide ────────────────────────────────────────────────────────────
   function renderBrowse(): void {
     root.innerHTML = `
-      <div class="bmp-slide-nav">
-        <button class="bmp-back-btn" id="back-btn">← Back</button>
-        <h2 class="bmp-slide-title">Public Rooms</h2>
-        <button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="refresh-rooms-btn">↻ Refresh</button>
-      </div>
+      ${logoHtml()}
 
-      <div class="bmp-card" style="width:100%">
-        <div class="bmp-card__body" style="padding-top:0.7rem;padding-bottom:0.7rem">
+      ${cardHtml({
+        headerClass: 'bmp-card__header--green',
+        icon: '🌐',
+        title: 'Browse Rooms',
+        headerExtra: `<button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="refresh-rooms-btn" style="margin-left:auto">↻ Refresh</button>`,
+        style: 'width:100%',
+        body: `
           <ul class="bmp-room-list" id="public-rooms-list">
             <li class="bmp-room-list__empty">Loading rooms…</li>
           </ul>
-        </div>
-      </div>
+          <div class="bmp-action-row" style="justify-content:flex-start">
+            <button class="bmp-btn bmp-btn--danger bmp-btn--sm" id="cancel-btn">← Cancel</button>
+          </div>
+        `,
+      })}
 
-      <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
+      ${errorHtml()}
     `;
 
-    root.querySelector('#back-btn')!.addEventListener('click', () => go('home'));
+    root.querySelector('#cancel-btn')!.addEventListener('click', () => go('home'));
     root.querySelector('#refresh-rooms-btn')!.addEventListener('click', () => {
       const list = root.querySelector<HTMLUListElement>('#public-rooms-list');
       if (list) list.innerHTML = '<li class="bmp-room-list__empty">Loading rooms…</li>';
@@ -237,31 +281,30 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
   // ── Join private slide ──────────────────────────────────────────────────────
   function renderJoin(): void {
     root.innerHTML = `
-      <div class="bmp-slide-nav">
-        <button class="bmp-back-btn" id="back-btn">← Back</button>
-        <h2 class="bmp-slide-title">Join Private Room</h2>
-        <div></div>
-      </div>
+      ${logoHtml()}
 
-      <div class="bmp-card" style="width:100%;max-width:380px">
-        <div class="bmp-card__header bmp-card__header--pink">
-          <span class="bmp-card__icon">🔒</span>
-          <h2 class="bmp-card__title">Enter Room ID</h2>
-        </div>
-        <div class="bmp-card__body">
+      ${cardHtml({
+        headerClass: 'bmp-card__header--pink',
+        icon: '🔒',
+        title: 'Join Private Room',
+        style: 'width:100%;max-width:380px',
+        body: `
           <div class="bmp-field">
             <label class="bmp-label" for="join-id">Room ID</label>
             <input class="bmp-input bmp-input--mono" id="join-id" type="text"
               placeholder="ABCD1234" maxlength="16" autocomplete="off"
               style="text-transform:uppercase;letter-spacing:0.12em;" />
           </div>
-          <button class="bmp-btn bmp-btn--secondary" id="join-btn">
-            Join Room <span class="bmp-btn__arrow">→</span>
-          </button>
-        </div>
-      </div>
+          <div class="bmp-action-row">
+            <button class="bmp-btn bmp-btn--danger bmp-btn--sm" id="cancel-btn">← Cancel</button>
+            <button class="bmp-btn bmp-btn--secondary" id="join-btn">
+              Join Room <span class="bmp-btn__arrow">→</span>
+            </button>
+          </div>
+        `,
+      })}
 
-      <p id="lobby-error" class="bmp-error" role="alert" aria-live="polite"></p>
+      ${errorHtml()}
     `;
 
     const joinIdEl = root.querySelector<HTMLInputElement>('#join-id')!;
@@ -284,7 +327,7 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
 
     joinBtn.addEventListener('click', submit);
     joinIdEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-    root.querySelector('#back-btn')!.addEventListener('click', () => go('home'));
+    root.querySelector('#cancel-btn')!.addEventListener('click', () => go('home'));
   }
 
   render();
@@ -338,71 +381,75 @@ export function showWaitingRoom(
   root.style.display = 'flex';
   injectStyles();
 
-  const amCreator  = state.players.some((p) => p.id === myPlayerId && p.isCreator);
-  const isStarting = state.status === 'STARTING';
-  const isPublic   = state.isPublic !== false; // treat undefined as true
+  type WaitSlide = 'players' | 'settings';
+  let currentSlide: WaitSlide = 'players';
 
-  let countdownHtml = '';
-  if (isStarting && state.countdownEndsAt) {
-    const secsLeft = Math.max(0, Math.ceil((state.countdownEndsAt - Date.now()) / 1000));
-    countdownHtml = `
-      <div class="bmp-countdown-wrap">
-        <span class="bmp-countdown-label">Starting in</span>
-        <span class="bmp-countdown">${secsLeft}</span>
-      </div>
-    `;
+  function go(slide: WaitSlide): void {
+    currentSlide = slide;
+    render();
   }
 
-  // Empty slot placeholders
-  const emptySlots = Array.from(
-    { length: state.maxPlayers - state.players.length },
-    (_, i) => `
-      <li class="bmp-player-row bmp-player-row--empty">
-        <span class="bmp-player-slot">Slot ${state.players.length + i + 1}</span>
-      </li>
-    `,
-  ).join('');
+  function render(): void {
+    clear(root);
+    switch (currentSlide) {
+      case 'players':  renderPlayers();  break;
+      case 'settings': renderSettings(); break;
+    }
+  }
 
-  const gameInProgressBanner = gameInProgress
-    ? `<div class="bmp-game-banner">🎮 Game in progress — you'll join next round</div>`
-    : '';
+  // ── Players slide ───────────────────────────────────────────────────────────
+  function renderPlayers(): void {
+    const amCreator  = state.players.some((p) => p.id === myPlayerId && p.isCreator);
+    const isStarting = state.status === 'STARTING';
 
-  const startBtn = gameInProgress
-    ? ''
-    : amCreator
-      ? `<button class="bmp-btn bmp-btn--primary bmp-btn--sm" id="start-btn" ${isStarting ? 'disabled' : ''}>
-           ${isStarting ? 'Starting…' : 'Start Game <span class="bmp-btn__arrow" aria-hidden="true">→</span>'}
-         </button>`
-      : `<span class="bmp-waiting-hint">Waiting for host…</span>`;
+    let countdownHtml = '';
+    if (isStarting && state.countdownEndsAt) {
+      const secsLeft = Math.max(0, Math.ceil((state.countdownEndsAt - Date.now()) / 1000));
+      countdownHtml = `
+        <div class="bmp-countdown-wrap">
+          <span class="bmp-countdown-label">Starting in</span>
+          <span class="bmp-countdown">${secsLeft}</span>
+        </div>
+      `;
+    }
 
-  const shareUrl = `${window.location.origin}${window.location.pathname}#r${state.roomId}`;
+    const emptySlots = Array.from(
+      { length: state.maxPlayers - state.players.length },
+      (_, i) => `
+        <li class="bmp-player-row bmp-player-row--empty">
+          <span class="bmp-player-slot">Slot ${state.players.length + i + 1}</span>
+        </li>
+      `,
+    ).join('');
 
-  const toggleDisabled = !amCreator ? 'disabled' : '';
-  const toggleChecked  = isPublic ? 'checked' : '';
-  const toggleHint     = isPublic
-    ? 'Visible in the public room list'
-    : 'Private — join via direct link only';
+    const gameInProgressBanner = gameInProgress
+      ? `<div class="bmp-game-banner">🎮 Game in progress — you'll join next round</div>`
+      : '';
 
-  root.innerHTML = `
-    <div class="bmp-dec bmp-dec--circle-yellow bmp-dec--sm" aria-hidden="true"></div>
+    const startBtn = gameInProgress
+      ? ''
+      : amCreator
+        ? `<button class="bmp-btn bmp-btn--primary bmp-btn--sm" id="start-btn" ${isStarting ? 'disabled' : ''}>
+             ${isStarting ? 'Starting…' : 'Start Game <span class="bmp-btn__arrow" aria-hidden="true">→</span>'}
+           </button>`
+        : `<span class="bmp-waiting-hint">Waiting for host…</span>`;
 
-    <div class="bmp-logo bmp-logo--sm">
-      <img class="bmp-logo__bomb" src="${iconPath('hudBombIcon')}" alt="Bomb">
-      <h1 class="bmp-logo__text">BomberMP</h1>
-    </div>
+    root.innerHTML = `
+      <div class="bmp-dec bmp-dec--circle-yellow bmp-dec--sm" aria-hidden="true"></div>
 
-    <div class="bmp-waiting-layout">
-      <!-- Player list card -->
-      <div class="bmp-card">
-        <div class="bmp-card__header bmp-card__header--violet">
-          <h2 class="bmp-card__title" style="font-size:1rem;">Room</h2>
+      ${logoHtml()}
+
+      ${cardHtml({
+        headerClass: 'bmp-card__header--violet',
+        title: 'Room',
+        headerExtra: `
           <div class="bmp-room-id-wrap">
             <span class="bmp-room-id">${escHtml(state.roomId)}</span>
             <button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="copy-btn">Copy ID</button>
           </div>
-        </div>
-
-        <div class="bmp-card__body">
+        `,
+        style: 'width:100%',
+        body: `
           <ul class="bmp-player-list" id="player-list">
             ${state.players.map((p, i) => renderPlayerRow(p, myPlayerId, i)).join('')}
             ${emptySlots}
@@ -413,20 +460,54 @@ export function showWaitingRoom(
 
           <div class="bmp-action-row">
             <button class="bmp-btn bmp-btn--danger bmp-btn--sm" id="leave-btn">Leave</button>
+            <button class="bmp-btn bmp-btn--ghost bmp-btn--sm" id="settings-btn">⚙️ Settings</button>
             ${startBtn}
           </div>
 
           <p class="bmp-player-count">${state.players.length} / ${state.maxPlayers} players</p>
-        </div>
-      </div>
+        `,
+      })}
+    `;
 
-      <!-- Room settings card -->
-      <div class="bmp-card">
-        <div class="bmp-card__header bmp-card__header--green">
-          <span class="bmp-card__icon" aria-hidden="true">⚙️</span>
-          <h2 class="bmp-card__title">Room Settings</h2>
-        </div>
-        <div class="bmp-card__body">
+    root.querySelector<HTMLButtonElement>('#copy-btn')!.addEventListener('click', () => {
+      const btn = root.querySelector<HTMLButtonElement>('#copy-btn')!;
+      void navigator.clipboard.writeText(state.roomId).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy ID'; }, 1500);
+      });
+    });
+
+    root.querySelector('#leave-btn')!.addEventListener('click', onLeave);
+    root.querySelector('#settings-btn')!.addEventListener('click', () => go('settings'));
+
+    const startBtnEl = root.querySelector<HTMLButtonElement>('#start-btn');
+    startBtnEl?.addEventListener('click', () => {
+      if (startBtnEl) startBtnEl.disabled = true;
+      onStart();
+    });
+  }
+
+  // ── Settings slide ──────────────────────────────────────────────────────────
+  function renderSettings(): void {
+    const amCreator  = state.players.some((p) => p.id === myPlayerId && p.isCreator);
+    const isPublic   = state.isPublic !== false;
+    const shareUrl   = `${window.location.origin}${window.location.pathname}#r${state.roomId}`;
+
+    const toggleDisabled = !amCreator ? 'disabled' : '';
+    const toggleChecked  = isPublic ? 'checked' : '';
+    const toggleHint     = isPublic
+      ? 'Visible in the public room list'
+      : 'Private — join via direct link only';
+
+    root.innerHTML = `
+      ${logoHtml()}
+
+      ${cardHtml({
+        headerClass: 'bmp-card__header--green',
+        icon: '⚙️',
+        title: 'Room Settings',
+        style: 'width:100%;max-width:420px',
+        body: `
           <div class="bmp-toggle-row">
             <span class="bmp-label" style="margin-bottom:0">Public room</span>
             <label class="bmp-toggle" title="${amCreator ? 'Toggle public/private' : 'Only the host can change this'}">
@@ -441,48 +522,40 @@ export function showWaitingRoom(
             <span class="bmp-share-link" title="${escHtml(shareUrl)}">${escHtml(shareUrl)}</span>
             <button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="share-copy-btn">Copy Link</button>
           </div>
-        </div>
-      </div>
-    </div>
-  `;
 
-  const copyBtn      = root.querySelector<HTMLButtonElement>('#copy-btn')!;
-  const leaveBtn     = root.querySelector<HTMLButtonElement>('#leave-btn')!;
-  const startBtnEl   = root.querySelector<HTMLButtonElement>('#start-btn');
-  const toggleEl     = root.querySelector<HTMLInputElement>('#room-public-toggle');
-  const toggleHintEl = root.querySelector<HTMLParagraphElement>('#toggle-hint');
-  const shareCopyBtn = root.querySelector<HTMLButtonElement>('#share-copy-btn')!;
+          <div class="bmp-action-row" style="justify-content:flex-start">
+            <button class="bmp-btn bmp-btn--danger bmp-btn--sm" id="back-btn">← Back to Room</button>
+          </div>
+        `,
+      })}
+    `;
 
-  copyBtn.addEventListener('click', () => {
-    void navigator.clipboard.writeText(state.roomId).then(() => {
-      copyBtn.textContent = 'Copied!';
-      setTimeout(() => { copyBtn.textContent = 'Copy ID'; }, 1500);
+    root.querySelector('#back-btn')!.addEventListener('click', () => go('players'));
+
+    const toggleEl     = root.querySelector<HTMLInputElement>('#room-public-toggle');
+    const toggleHintEl = root.querySelector<HTMLParagraphElement>('#toggle-hint');
+
+    toggleEl?.addEventListener('change', () => {
+      if (!amCreator || !toggleEl) return;
+      const nowPublic = toggleEl.checked;
+      if (toggleHintEl) {
+        toggleHintEl.textContent = nowPublic
+          ? 'Visible in the public room list'
+          : 'Private — join via direct link only';
+      }
+      onConfigure?.(nowPublic);
     });
-  });
 
-  leaveBtn.addEventListener('click', onLeave);
-  startBtnEl?.addEventListener('click', () => {
-    if (startBtnEl) startBtnEl.disabled = true;
-    onStart();
-  });
-
-  toggleEl?.addEventListener('change', () => {
-    if (!amCreator || !toggleEl) return;
-    const nowPublic = toggleEl.checked;
-    if (toggleHintEl) {
-      toggleHintEl.textContent = nowPublic
-        ? 'Visible in the public room list'
-        : 'Private — join via direct link only';
-    }
-    onConfigure?.(nowPublic);
-  });
-
-  shareCopyBtn.addEventListener('click', () => {
-    void navigator.clipboard.writeText(shareUrl).then(() => {
-      shareCopyBtn.textContent = 'Copied!';
-      setTimeout(() => { shareCopyBtn.textContent = 'Copy Link'; }, 1500);
+    const shareCopyBtn = root.querySelector<HTMLButtonElement>('#share-copy-btn')!;
+    shareCopyBtn.addEventListener('click', () => {
+      void navigator.clipboard.writeText(shareUrl).then(() => {
+        shareCopyBtn.textContent = 'Copied!';
+        setTimeout(() => { shareCopyBtn.textContent = 'Copy Link'; }, 1500);
+      });
     });
-  });
+  }
+
+  render();
 }
 
 function renderPlayerRow(player: RoomPlayer, myPlayerId: string, slotIndex: number): string {
@@ -831,17 +904,6 @@ function injectStyles(): void {
       margin-left: auto;
     }
 
-    /* ── Waiting room layout ───────────────────────────────────── */
-    .bmp-waiting-layout {
-      display: flex;
-      gap: 1rem;
-      width: 100%;
-      flex-wrap: wrap;
-    }
-    .bmp-waiting-layout > .bmp-card {
-      flex: 1 1 300px;
-      min-width: 280px;
-    }
     .bmp-room-id-wrap {
       display: flex;
       align-items: center;
@@ -1204,37 +1266,6 @@ function injectStyles(): void {
     .bmp-play-option__title { font-weight: 700; font-size: 0.88rem; color: #1E293B; }
     .bmp-play-option__sub { font-size: 0.72rem; color: #94A3B8; }
     .bmp-play-option__arrow { font-size: 0.95rem; color: #CBD5E1; flex-shrink: 0; }
-
-    /* ── Slide navigation header ────────────────────────────────── */
-    .bmp-slide-nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      width: 100%;
-      gap: 0.5rem;
-    }
-    .bmp-back-btn {
-      background: none;
-      border: 2px solid #1E293B;
-      border-radius: 9999px;
-      padding: 0.38rem 0.85rem;
-      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-      font-weight: 700;
-      font-size: 0.8rem;
-      cursor: pointer;
-      color: #1E293B;
-      white-space: nowrap;
-      transition: background 0.12s;
-    }
-    .bmp-back-btn:hover { background: #F1F5F9; }
-    .bmp-slide-title {
-      font-family: 'Outfit', system-ui, sans-serif;
-      font-weight: 800;
-      font-size: 1.05rem;
-      color: #1E293B;
-      margin: 0;
-      text-align: center;
-    }
 
     /* ── Responsive ────────────────────────────────────────────── */
     @media (max-width: 480px) {

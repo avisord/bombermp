@@ -1,0 +1,35 @@
+we would like to go with v4 but with some changes:
+
+home page structure:
+  - navigation based ui
+  - no actual routing 
+  - js based routing
+  
+  slides:
+    - home slide:
+      1. name avatar view/edit
+        - left side (name edit)
+          - by default readonly (random string)
+          - followed by edit icon
+          - on clicking it 
+          - it becomes editable        
+          - on pressing enter or clicking (tick) icon save name
+          - name persist to local storage (already working)
+        - right side (atatar)
+          - preview current avatar (already persisted)
+          - small edit icon
+          - clicking on it navigates to customise character slide
+      
+      2. play game:
+        - three buttons:
+          - create room:
+            - clicking on it navigates directly to lobby (already working in v4 view)
+          - browse rooms:
+            - navigates to browse rooms slide (back navigatable)
+            - on choosing room navigates to lobby slide
+            - on back navigates to home slide
+          - join room:  
+            - navigates to join rooms slide/form 
+            - on correct code submit navigate to lobby
+            - on back navigates to home slide
+
