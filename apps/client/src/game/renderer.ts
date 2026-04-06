@@ -295,7 +295,7 @@ function drawBomb(
     return;
   }
 
-  const pad = TILE_SIZE * 0.05;
+  const pad = TILE_SIZE * 0.00;
   ctx.globalAlpha = alpha;
   ctx.drawImage(
     SPRITES.bombPlain,

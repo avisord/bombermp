@@ -13,6 +13,7 @@ const PLAYER_BG_LIGHT  = ['#EDE9FE', '#FCE7F3', '#FEF3C7', '#D1FAE5'] as const;
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function clear(root: HTMLElement): void {
+  root.dispatchEvent(new CustomEvent('bmp:lobby-cleanup'));
   root.innerHTML = '';
 }
 
@@ -67,6 +68,15 @@ interface CardOpts {
   style?: string;
 }
 
+interface LobbyBrowseState {
+  rooms: PublicRoomInfo[];
+  query: string;
+  isLoading: boolean;
+  renderRooms: () => void;
+}
+
+const lobbyBrowseState = new WeakMap<HTMLElement, LobbyBrowseState>();
+
 function cardHtml(opts: CardOpts): string {
   const headerContent = opts.title
     ? `
@@ -101,9 +111,19 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
   type Slide = 'home' | 'browse' | 'join';
   let currentSlide: Slide = options.prefillRoomId ? 'join' : 'home';
   let playerName = options.storedName ?? randomName();
+  const browseState: LobbyBrowseState = {
+    rooms: [],
+    query: '',
+    isLoading: false,
+    renderRooms: () => undefined,
+  };
+  lobbyBrowseState.set(root, browseState);
 
   function go(slide: Slide): void {
     currentSlide = slide;
+    if (slide === 'browse' && browseState.rooms.length === 0) {
+      browseState.isLoading = true;
+    }
     render();
     if (slide === 'browse') options.onRequestRoomList();
   }
@@ -249,6 +269,18 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
         headerExtra: `<button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="refresh-rooms-btn" style="margin-left:auto">↻ Refresh</button>`,
         style: 'width:100%',
         body: `
+          <div class="bmp-field">
+            <label class="bmp-label" for="room-search-input">Search rooms</label>
+            <input
+              class="bmp-input bmp-input--mono"
+              id="room-search-input"
+              type="text"
+              placeholder="Type room ID or player count"
+              autocomplete="off"
+              spellcheck="false"
+              value="${escHtml(browseState.query)}"
+            />
+          </div>
           <ul class="bmp-room-list" id="public-rooms-list">
             <li class="bmp-room-list__empty">Loading rooms…</li>
           </ul>
@@ -261,13 +293,56 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
       ${errorHtml()}
     `;
 
+    const searchInput = root.querySelector<HTMLInputElement>('#room-search-input')!;
+    const list = root.querySelector<HTMLUListElement>('#public-rooms-list')!;
+
+    browseState.renderRooms = () => {
+      renderPublicRoomsList(list, browseState.rooms, browseState.query, browseState.isLoading);
+    };
+    browseState.renderRooms();
+
+    searchInput.addEventListener('input', () => {
+      browseState.query = searchInput.value;
+      browseState.renderRooms();
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && searchInput.value) {
+        e.preventDefault();
+        searchInput.value = '';
+        browseState.query = '';
+        browseState.renderRooms();
+      }
+    });
+
+    const onBrowseKeydown = (e: KeyboardEvent): void => {
+      if (currentSlide !== 'browse') return;
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const target = e.target as HTMLElement | null;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) {
+        return;
+      }
+
+      if (e.key.length !== 1) return;
+
+      e.preventDefault();
+      searchInput.focus();
+      const start = searchInput.selectionStart ?? searchInput.value.length;
+      const end = searchInput.selectionEnd ?? searchInput.value.length;
+      searchInput.setRangeText(e.key, start, end, 'end');
+      browseState.query = searchInput.value;
+      browseState.renderRooms();
+    };
+
+    document.addEventListener('keydown', onBrowseKeydown);
     root.querySelector('#cancel-btn')!.addEventListener('click', () => go('home'));
     root.querySelector('#refresh-rooms-btn')!.addEventListener('click', () => {
-      const list = root.querySelector<HTMLUListElement>('#public-rooms-list');
-      if (list) list.innerHTML = '<li class="bmp-room-list__empty">Loading rooms…</li>';
+      browseState.rooms = [];
+      browseState.isLoading = true;
+      browseState.renderRooms();
       options.onRequestRoomList();
     });
-    root.querySelector('#public-rooms-list')!.addEventListener('click', (e) => {
+    list.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.bmp-room-list__join');
       if (!btn) return;
       const roomId = btn.dataset['roomId'];
@@ -276,6 +351,9 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
       btn.disabled = true;
       options.onJoinPublic(roomId, playerName);
     });
+    root.addEventListener('bmp:lobby-cleanup', () => {
+      document.removeEventListener('keydown', onBrowseKeydown);
+    }, { once: true });
   }
 
   // ── Join private slide ──────────────────────────────────────────────────────
@@ -334,22 +412,11 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
 }
 
 export function updatePublicRoomsList(root: HTMLElement, rooms: PublicRoomInfo[]): void {
-  const list = root.querySelector<HTMLUListElement>('#public-rooms-list');
-  if (!list) return;
-
-  if (rooms.length === 0) {
-    list.innerHTML = '<li class="bmp-room-list__empty">No public rooms available</li>';
-    return;
-  }
-
-  list.innerHTML = rooms.map((r) => `
-    <li class="bmp-room-list__item">
-      <span class="bmp-room-list__id">${escHtml(r.roomId)}</span>
-      <span class="bmp-room-list__count">${r.playerCount} / ${r.maxPlayers}</span>
-      <button class="bmp-btn bmp-btn--ghost bmp-btn--xs bmp-room-list__join"
-        data-room-id="${escHtml(r.roomId)}">Join →</button>
-    </li>
-  `).join('');
+  const browseState = lobbyBrowseState.get(root);
+  if (!browseState) return;
+  browseState.rooms = rooms;
+  browseState.isLoading = false;
+  browseState.renderRooms();
 }
 
 export function showLobbyError(root: HTMLElement, message: string): void {
@@ -616,6 +683,51 @@ export function hideUI(root: HTMLElement): void {
 
 export function showUI(root: HTMLElement): void {
   root.style.display = 'flex';
+}
+
+function renderPublicRoomsList(
+  list: HTMLUListElement,
+  rooms: PublicRoomInfo[],
+  query: string,
+  isLoading: boolean,
+): void {
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRooms = normalizedQuery
+    ? rooms.filter((room) => {
+        const haystacks = [
+          room.roomId,
+          `${room.playerCount}`,
+          `${room.playerCount}/${room.maxPlayers}`,
+          `${room.playerCount} / ${room.maxPlayers}`,
+          `${room.maxPlayers}`,
+        ];
+        return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery));
+      })
+    : rooms;
+
+  if (isLoading) {
+    list.innerHTML = '<li class="bmp-room-list__empty">Loading rooms…</li>';
+    return;
+  }
+
+  if (rooms.length === 0) {
+    list.innerHTML = '<li class="bmp-room-list__empty">No public rooms available</li>';
+    return;
+  }
+
+  if (filteredRooms.length === 0) {
+    list.innerHTML = '<li class="bmp-room-list__empty">No rooms match your search</li>';
+    return;
+  }
+
+  list.innerHTML = filteredRooms.map((r) => `
+    <li class="bmp-room-list__item">
+      <span class="bmp-room-list__id">${escHtml(r.roomId)}</span>
+      <span class="bmp-room-list__count">${r.playerCount} / ${r.maxPlayers}</span>
+      <button class="bmp-btn bmp-btn--ghost bmp-btn--xs bmp-room-list__join"
+        data-room-id="${escHtml(r.roomId)}">Join →</button>
+    </li>
+  `).join('');
 }
 
 // ─── Style injection ──────────────────────────────────────────────────────────

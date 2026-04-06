@@ -50,8 +50,8 @@ export const ASSET_REGISTRY = {
   },
   wallSoft: {
     kind: 'cropped',
-    path: '/sprites/new/brekable-brick.png',
-    crop: { sx: 0, sy: 0, sw: 703, sh: 703 },
+    path: '/sprites/new/test-breakable-wall.png',
+    crop: { sx: 0, sy: 0, sw: 348, sh: 348 },
   },
   empty: {
     kind: 'cropped',
