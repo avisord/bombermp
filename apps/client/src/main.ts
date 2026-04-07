@@ -16,6 +16,7 @@ import { ClientGameState } from './game/state.js';
 import { InputHandler } from './game/input.js';
 import { render, clearExplosionTimestamps } from './game/renderer.js';
 import { LocalPlayerPredictor } from './game/prediction.js';
+import { RemotePlayerInterpolator } from './game/interpolation.js';
 import { loadSprites } from './game/sprites.js';
 import {
   showLobby,
@@ -56,7 +57,8 @@ const isTestMode  = window.location.pathname === '/test-game';
 const myPlayerId  = getOrCreatePlayerId();
 const gameState   = new ClientGameState();
 const input       = new InputHandler();
-const predictor   = new LocalPlayerPredictor();
+const predictor     = new LocalPlayerPredictor();
+const interpolator  = new RemotePlayerInterpolator();
 const playerSlotMap = new Map<string, number>();
 
 let rtt            = 0;
@@ -106,7 +108,16 @@ function startRenderLoop(): void {
       const me = state.players[myPlayerId];
       if (me) predictor.advance(input.currentDir, me.speedMultiplier, state.grid, nowMs);
       const predicted = predictor.isActive ? { x: predictor.x, y: predictor.y } : null;
-      render(ctx!, state, myPlayerId, playerSlotMap, predicted, playerDirections, myAppearance);
+
+      // Build interpolated positions for remote players
+      const interpPositions = new Map<string, { x: number; y: number }>();
+      for (const id of Object.keys(state.players)) {
+        if (id === myPlayerId) continue;
+        const pos = interpolator.getPosition(id, nowMs);
+        if (pos) interpPositions.set(id, pos);
+      }
+
+      render(ctx!, state, myPlayerId, playerSlotMap, predicted, playerDirections, myAppearance, interpPositions);
     }
     rafId = requestAnimationFrame(frame);
   }
@@ -144,6 +155,7 @@ socket.on('room:state', (state: RoomState) => {
       input.detach(document);
       gameState.reset();
       predictor.reset();
+      interpolator.reset();
       clearExplosionTimestamps();
       playerDirections.clear();
       playerPrevPixel.clear();
@@ -188,6 +200,7 @@ socket.on('room:state', (state: RoomState) => {
         input.detach(document);
         gameState.reset();
         predictor.reset();
+        interpolator.reset();
         clearExplosionTimestamps();
         showUI(uiRoot);
         showWaitingRoom(
@@ -224,6 +237,11 @@ socket.on('game:tick', (diff) => {
         predictor.addPassableBomb(bomb.position.x, bomb.position.y);
       }
     }
+  }
+
+  // Feed interpolator before applying diff (captures prev→curr transition)
+  if (gameState.state?.players) {
+    interpolator.onTick(gameState.state.players, diff.players);
   }
 
   gameState.applyDiff(diff);

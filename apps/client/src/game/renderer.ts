@@ -63,6 +63,7 @@ export function render(
   predictedPos: { x: number; y: number } | null,
   playerDirections: Map<string, Direction>,
   myAppearance: PlayerAppearance,
+  remotePositions?: Map<string, { x: number; y: number }>,
 ): void {
   const canvasW = GRID_COLS * TILE_SIZE;
   const canvasH = GRID_ROWS * TILE_SIZE;
@@ -101,7 +102,12 @@ export function render(
   // ── Players ──────────────────────────────────────────────────────────────
   for (const [id, player] of Object.entries(state.players)) {
     if (player.alive) {
-      const pos        = (id === myPlayerId && predictedPos) ? predictedPos : null;
+      let pos: { x: number; y: number } | null = null;
+      if (id === myPlayerId && predictedPos) {
+        pos = predictedPos;
+      } else if (id !== myPlayerId) {
+        pos = remotePositions?.get(id) ?? null;
+      }
       const facing     = playerDirections.get(id) ?? Direction.DOWN;
       const appearance = id === myPlayerId ? myAppearance : appearanceFromId(id);
       drawPlayer(ctx, player, id, myPlayerId, playerSlotMap, pos, facing, appearance, now);
