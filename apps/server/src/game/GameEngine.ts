@@ -220,7 +220,7 @@ export class GameEngine {
 
     const passableIndices = this.buildPassableIndices(sp);
 
-    if (!this.collidesWithGrid(newX, newY, passableIndices)) {
+    if (!this.collidesAny(newX, newY, passableIndices, playerId)) {
       // Direct movement clears — take it.
       sp.pixelX = newX;
       sp.pixelY = newY;
@@ -233,13 +233,10 @@ export class GameEngine {
       const yDiff   = targetY - sp.pixelY;
       if (Math.abs(yDiff) > 0.001) {
         const nudgedY = sp.pixelY + Math.sign(yDiff) * Math.min(Math.abs(yDiff), delta);
-        if (!this.collidesWithGrid(newX, nudgedY, passableIndices)) {
-          // Nudge + horizontal both fit — apply both.
+        if (!this.collidesAny(newX, nudgedY, passableIndices, playerId)) {
           sp.pixelX = newX;
           sp.pixelY = nudgedY;
-        } else if (!this.collidesWithGrid(sp.pixelX, nudgedY, passableIndices)) {
-          // Horizontal still blocked after nudge (real wall ahead), but the nudge
-          // itself is safe — at least align Y so the next tick can try again.
+        } else if (!this.collidesAny(sp.pixelX, nudgedY, passableIndices, playerId)) {
           sp.pixelY = nudgedY;
         }
       }
@@ -249,10 +246,10 @@ export class GameEngine {
       const xDiff   = targetX - sp.pixelX;
       if (Math.abs(xDiff) > 0.001) {
         const nudgedX = sp.pixelX + Math.sign(xDiff) * Math.min(Math.abs(xDiff), delta);
-        if (!this.collidesWithGrid(nudgedX, newY, passableIndices)) {
+        if (!this.collidesAny(nudgedX, newY, passableIndices, playerId)) {
           sp.pixelX = nudgedX;
           sp.pixelY = newY;
-        } else if (!this.collidesWithGrid(nudgedX, sp.pixelY, passableIndices)) {
+        } else if (!this.collidesAny(nudgedX, sp.pixelY, passableIndices, playerId)) {
           sp.pixelX = nudgedX;
         }
       }
@@ -315,7 +312,7 @@ export class GameEngine {
   }
 
   /**
-   * AABB collision check.
+   * AABB collision check against the tile grid.
    * passableIndices: flat grid indices of bomb tiles that are still passable
    * for the moving player (they haven't fully walked off yet).
    */
@@ -334,6 +331,26 @@ export class GameEngine {
       if (tile === TileType.BOMB && !passableIndices.has(toIndex(tx, ty))) return true;
     }
     return false;
+  }
+
+  /**
+   * AABB collision check against all other alive players.
+   * Two hitboxes overlap when their centers are within 2*HALF on both axes.
+   */
+  private collidesWithPlayers(cx: number, cy: number, excludeId: string): boolean {
+    const size = 2 * HALF; // 0.9
+    for (const [id, other] of this.serverPlayers) {
+      if (id === excludeId || !other.alive) continue;
+      if (Math.abs(cx - other.pixelX) < size && Math.abs(cy - other.pixelY) < size) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Combined grid + player collision check. */
+  private collidesAny(cx: number, cy: number, passableIndices: Set<number>, excludeId: string): boolean {
+    return this.collidesWithGrid(cx, cy, passableIndices) || this.collidesWithPlayers(cx, cy, excludeId);
   }
 
   // ─── Bomb placement ──────────────────────────────────────────────────────────

@@ -67,3 +67,8 @@ there are a few issue:
   - when there is L shaped space is there they put bomb in the middle (killing themselves)
   - they are actually to hard to win against
   - they are not getting assigned differnt colors
+
+---
+
+there are still several issues:
+  - bots die when they place bombs in center of L shaped space

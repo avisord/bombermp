@@ -14,7 +14,13 @@ import {
 
 const HALF = 0.45;
 
-function collides(px: number, py: number, grid: TileType[], passable: Set<number>): boolean {
+export interface OtherPlayerPos {
+  pixelX: number;
+  pixelY: number;
+  alive: boolean;
+}
+
+function collidesGrid(px: number, py: number, grid: TileType[], passable: Set<number>): boolean {
   const corners = [
     [px - HALF, py - HALF],
     [px + HALF, py - HALF],
@@ -31,6 +37,21 @@ function collides(px: number, py: number, grid: TileType[], passable: Set<number
     if (tile === TileType.BOMB && !passable.has(idx)) return true;
   }
   return false;
+}
+
+function collidesPlayers(px: number, py: number, others: OtherPlayerPos[]): boolean {
+  const size = 2 * HALF; // 0.9
+  for (const other of others) {
+    if (!other.alive) continue;
+    if (Math.abs(px - other.pixelX) < size && Math.abs(py - other.pixelY) < size) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collides(px: number, py: number, grid: TileType[], passable: Set<number>, others: OtherPlayerPos[]): boolean {
+  return collidesGrid(px, py, grid, passable) || collidesPlayers(px, py, others);
 }
 
 /** Mirror of server hitboxOverlapsTile: true if any corner of the hitbox rounds to (tx, ty). */
@@ -114,6 +135,7 @@ export class LocalPlayerPredictor {
     speedMult: number,
     grid: TileType[],
     nowMs: number,
+    otherPlayers: OtherPlayerPos[] = [],
   ): void {
     if (!this.active) return;
     const dt = Math.min((nowMs - this.lastFrameMs) / 1000, 0.1); // cap at 100 ms
@@ -135,7 +157,7 @@ export class LocalPlayerPredictor {
     const newX = this.px + dx * delta;
     const newY = this.py + dy * delta;
 
-    if (!collides(newX, newY, grid, passable)) {
+    if (!collides(newX, newY, grid, passable, otherPlayers)) {
       this.px = newX;
       this.py = newY;
       return;
@@ -147,12 +169,12 @@ export class LocalPlayerPredictor {
       const yDiff   = targetY - this.py;
       if (Math.abs(yDiff) > 0.001) {
         const nudgedY = this.py + Math.sign(yDiff) * Math.min(Math.abs(yDiff), delta);
-        if (!collides(newX, nudgedY, grid, passable)) {
+        if (!collides(newX, nudgedY, grid, passable, otherPlayers)) {
           this.px = newX;
           this.py = nudgedY;
           return;
         }
-        if (!collides(this.px, nudgedY, grid, passable)) {
+        if (!collides(this.px, nudgedY, grid, passable, otherPlayers)) {
           this.py = nudgedY;
           return;
         }
@@ -162,12 +184,12 @@ export class LocalPlayerPredictor {
       const xDiff   = targetX - this.px;
       if (Math.abs(xDiff) > 0.001) {
         const nudgedX = this.px + Math.sign(xDiff) * Math.min(Math.abs(xDiff), delta);
-        if (!collides(nudgedX, newY, grid, passable)) {
+        if (!collides(nudgedX, newY, grid, passable, otherPlayers)) {
           this.px = nudgedX;
           this.py = newY;
           return;
         }
-        if (!collides(nudgedX, this.py, grid, passable)) {
+        if (!collides(nudgedX, this.py, grid, passable, otherPlayers)) {
           this.px = nudgedX;
           return;
         }

@@ -16,6 +16,7 @@ import { ClientGameState } from './game/state.js';
 import { InputHandler } from './game/input.js';
 import { render, clearExplosionTimestamps } from './game/renderer.js';
 import { LocalPlayerPredictor } from './game/prediction.js';
+import type { OtherPlayerPos } from './game/prediction.js';
 import { RemotePlayerInterpolator } from './game/interpolation.js';
 import { loadSprites } from './game/sprites.js';
 import {
@@ -106,7 +107,13 @@ function startRenderLoop(): void {
     const state = gameState.state;
     if (state) {
       const me = state.players[myPlayerId];
-      if (me) predictor.advance(input.currentDir, me.speedMultiplier, state.grid, nowMs);
+      if (me) {
+        const others: OtherPlayerPos[] = [];
+        for (const [id, p] of Object.entries(state.players)) {
+          if (id !== myPlayerId) others.push(p);
+        }
+        predictor.advance(input.currentDir, me.speedMultiplier, state.grid, nowMs, others);
+      }
       const predicted = predictor.isActive ? { x: predictor.x, y: predictor.y } : null;
 
       // Build interpolated positions for remote players
