@@ -4,6 +4,7 @@ import {
   BODY_OPTIONS, EYE_OPTIONS, HAT_OPTIONS, ACCESSORY_OPTIONS,
 } from '../game/appearance.js';
 import { drawPlayerPreview } from '../game/renderer.js';
+import { assetPath } from '../assets/registry.js';
 
 // ─── Human-readable labels ────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ export function showCustomize(
     <div class="bmp-dec bmp-dec--circle-yellow bmp-dec--sm" aria-hidden="true"></div>
 
     <div class="bmp-logo bmp-logo--sm">
-      <img class="bmp-logo__bomb" src="/sprites/new/bomb.png" alt="Bomb">
+      <img class="bmp-logo__bomb" src="${assetPath('/sprites/new/bomb.png')}" alt="Bomb">
       <h1 class="bmp-logo__text">BomberMP</h1>
     </div>
 

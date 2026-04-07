@@ -1,4 +1,4 @@
-import { ASSET_REGISTRY } from '../assets/registry.js';
+import { ASSET_REGISTRY, assetPath } from '../assets/registry.js';
 
 // ─── Sprite sheet frame configs ───────────────────────────────────────────────
 
@@ -92,12 +92,12 @@ function removeBlackBackground(img: HTMLImageElement, threshold = 60): HTMLCanva
 
 export async function loadSprites(): Promise<void> {
   const results = await Promise.allSettled([
-    loadImage(ASSET_REGISTRY.wallHard.path),
-    loadImage(ASSET_REGISTRY.wallSoft.path),
-    loadImage(ASSET_REGISTRY.bombPlain.path),
-    loadImage(ASSET_REGISTRY.bombSheet.path),
-    loadImage(ASSET_REGISTRY.explosionSheet.path),
-    loadImage(ASSET_REGISTRY.itemSheet.path),
+    loadImage(assetPath(ASSET_REGISTRY.wallHard.path)),
+    loadImage(assetPath(ASSET_REGISTRY.wallSoft.path)),
+    loadImage(assetPath(ASSET_REGISTRY.bombPlain.path)),
+    loadImage(assetPath(ASSET_REGISTRY.bombSheet.path)),
+    loadImage(assetPath(ASSET_REGISTRY.explosionSheet.path)),
+    loadImage(assetPath(ASSET_REGISTRY.itemSheet.path)),
   ]);
 
   const [wallHard, wallSoft, bombPlain, bombSheet, explosionRaw, itemsRaw] = results;

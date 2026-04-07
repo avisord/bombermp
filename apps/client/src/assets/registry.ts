@@ -115,6 +115,12 @@ type IconKey = {
   [K in keyof typeof ASSET_REGISTRY]: (typeof ASSET_REGISTRY)[K]['kind'] extends 'icon' ? K : never;
 }[keyof typeof ASSET_REGISTRY];
 
+/** Prepend Vite's base URL so paths work on GitHub Pages (e.g. /bombermp/) */
+export function assetPath(path: string): string {
+  const base = import.meta.env.BASE_URL ?? '/';
+  return base.endsWith('/') ? base + path.replace(/^\//, '') : base + path;
+}
+
 export function iconPath(key: IconKey): string {
-  return ASSET_REGISTRY[key].path;
+  return assetPath(ASSET_REGISTRY[key].path);
 }
