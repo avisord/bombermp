@@ -1,6 +1,5 @@
 import {
   GRID_COLS,
-  GRID_ROWS,
   type Position,
   TileType,
   Direction,
@@ -60,7 +59,6 @@ export function bfsPath(
       parent.set(nIdx, current);
 
       if (nIdx === targetIdx) {
-        // Reconstruct path
         const path: Position[] = [];
         let cur = nIdx;
         while (cur !== startIdx) {
@@ -80,8 +78,10 @@ export function bfsPath(
 }
 
 /**
- * BFS from start, returns all reachable walkable cells that are NOT in the danger map.
- * The start cell is included even if it's in danger (bot is already there).
+ * BFS from start through all walkable tiles. Returns reachable cells that
+ * are NOT in the danger map. The BFS traverses through dangerous tiles
+ * because the bot can walk through a future blast zone before the bomb
+ * detonates (3s fuse). Only the destination must be safe.
  */
 export function findSafeCells(
   grid: TileType[],
@@ -121,7 +121,8 @@ export function findSafeCells(
 
 /**
  * BFS from start, returns the nearest walkable cell not in the danger map.
- * Returns null if no safe cell is reachable.
+ * Allowed to traverse through dangerous tiles (for fleeing — bot is already
+ * in danger and needs to get out even if the path crosses danger).
  */
 export function findNearestSafe(
   grid: TileType[],
@@ -130,7 +131,6 @@ export function findNearestSafe(
 ): Position | null {
   const startIdx = toIndex(start.x, start.y);
 
-  // If start is already safe, return it
   if (!dangerMap.has(startIdx)) return start;
 
   const visited = new Set<number>([startIdx]);

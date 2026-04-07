@@ -56,3 +56,14 @@ The +2 hysteresis prevents flickering between modes when a player is right on th
 Bot joining logic:
 
 if n players joins in game then (Max players - n) bots are joined in.
+
+
+---
+
+
+there are a few issue:
+  - bots when they have two cells to move 
+  - they do this very frequently
+  - when there is L shaped space is there they put bomb in the middle (killing themselves)
+  - they are actually to hard to win against
+  - they are not getting assigned differnt colors
