@@ -10,6 +10,8 @@ import type { ClientToServerEvents, ServerToClientEvents, InterServerEvents, Soc
 import { GameEngine } from '../game/GameEngine.js';
 import type { PlayerSlot } from '../game/GameEngine.js';
 import { GameSessionModel } from '../db/models/GameSession.js';
+import { BotController } from '../bots/BotController.js';
+import { pickBotName } from '../bots/botNames.js';
 import type { Server } from 'socket.io';
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -162,7 +164,7 @@ export class RoomManager {
     room.countdownTimer = null;
     room.countdownEndsAt = null;
 
-    const slots: PlayerSlot[] = [...room.players.values()]
+    const humanSlots: PlayerSlot[] = [...room.players.values()]
       .filter((p) => !p.lateJoin)
       .map((p) => ({
         playerId: p.playerId,
@@ -171,19 +173,50 @@ export class RoomManager {
         spawnIndex: p.spawnIndex,
       }));
 
-    if (slots.length < 1) {
+    if (humanSlots.length < 1) {
       room.status = RoomStatus.WAITING;
       this.io.to(room.roomId).emit('room:state', this.toRoomState(room));
       return;
     }
 
+    // Fill remaining spawn slots with bots
+    const usedSpawns = new Set(humanSlots.map((s) => s.spawnIndex));
+    const botSlots: PlayerSlot[] = [];
+    for (let i = 0; i < 4; i++) {
+      if (!usedSpawns.has(i)) {
+        botSlots.push({
+          playerId: `bot-${uuidv4().slice(0, 8)}`,
+          displayName: pickBotName(i),
+          socketId: 'bot-no-socket',
+          spawnIndex: i,
+        });
+      }
+    }
+    const allSlots = [...humanSlots, ...botSlots];
+
     room.status = RoomStatus.IN_GAME;
 
+    // BotController is created lazily — it needs the engine reference, and
+    // the engine needs the preTick callback. We solve this with a closure that
+    // captures a mutable variable.
+    let botController: BotController | null = null;
+    const preTick = botSlots.length > 0
+      ? (): void => { botController?.update(); }
+      : undefined;
+
     room.engine = new GameEngine(
-      slots,
+      allSlots,
       (diff) => { this.io.to(room.roomId).emit('game:tick', diff); },
       (winnerId) => { this.handleGameOver(room, winnerId); },
+      preTick,
     );
+
+    if (botSlots.length > 0) {
+      botController = new BotController(
+        botSlots.map((s) => s.playerId),
+        room.engine,
+      );
+    }
 
     // Persist session (fire-and-forget)
     GameSessionModel.create({
@@ -191,7 +224,7 @@ export class RoomManager {
       startedAt: new Date(),
       endedAt: null,
       winnerId: null,
-      playerIds: slots.map((s) => s.playerId),
+      playerIds: humanSlots.map((s) => s.playerId),
     }).then((session) => {
       room.sessionId = String(session._id);
     }).catch((err: unknown) => {

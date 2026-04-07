@@ -56,6 +56,7 @@ export interface Player {
   speedMultiplier: number;
   speedDebuffUntil: number | null;
   isReady: boolean;
+  isBot?: boolean;
 }
 
 export interface Bomb {
@@ -116,6 +117,7 @@ export interface RoomPlayer {
   displayName: string;
   isReady: boolean;
   isCreator: boolean;
+  isBot?: boolean;
 }
 
 export interface PublicRoomInfo {

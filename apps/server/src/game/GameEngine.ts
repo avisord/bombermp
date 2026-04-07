@@ -61,7 +61,12 @@ export class GameEngine {
   private readonly onTick: OnTickCallback;
   private readonly onGameOver: OnGameOverCallback;
 
-  constructor(playerSlots: PlayerSlot[], onTick: OnTickCallback, onGameOver: OnGameOverCallback) {
+  constructor(
+    playerSlots: PlayerSlot[],
+    onTick: OnTickCallback,
+    onGameOver: OnGameOverCallback,
+    private readonly preTick?: () => void,
+  ) {
     this.onTick = onTick;
     this.onGameOver = onGameOver;
 
@@ -83,6 +88,7 @@ export class GameEngine {
         speedMultiplier: 1,
         speedDebuffUntil: null,
         isReady: true,
+        ...(slot.socketId === 'bot-no-socket' ? { isBot: true } : {}),
         socketId: slot.socketId,
         pendingDir: null,
         pendingBomb: false,
@@ -144,6 +150,7 @@ export class GameEngine {
   // ─── Tick ────────────────────────────────────────────────────────────────────
 
   private tick(): void {
+    this.preTick?.();
     this.state.tick++;
     this.state.serverTime = Date.now();
 
@@ -660,6 +667,7 @@ export class GameEngine {
       speedMultiplier: sp.speedMultiplier,
       speedDebuffUntil: sp.speedDebuffUntil,
       isReady: sp.isReady,
+      ...(sp.isBot ? { isBot: true } : {}),
     };
   }
 

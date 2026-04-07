@@ -1,3 +1,58 @@
 feat: bots (ai):
-  - bots (hardness, level)
 
+EXPLORE mode  →  roam, break walls, move toward players
+BATTLE mode   →  bomb-and-hide loop, react to incoming bombs 
+ 
+Mode switch
+if any player/bot within N tiles:
+  mode = BATTLE
+else:
+  mode = EXPLORE
+N = your bomb blast radius + 1 is a good default. Close enough to actually fight, not so close they teleport into battle.  
+
+Explore mode
+pick direction:
+  prefer unvisited cells
+  prefer directions with breakable walls
+    (breaking walls = new paths = progress toward players)
+  avoid dead ends (BFS reachable < threshold)
+
+if breakable wall adjacent and no active bombs nearby:
+  place bomb, immediately move to safe cell
+
+Battle mode
+// every tick, in this order:
+ 
+1. REACT (highest priority, always runs first)
+   if any bomb (own or enemy) will reach my cell in time:
+     flee to nearest safe cell immediately
+     skip everything else this tick
+ 
+2. ATTACK
+   if enemy is in bomb blast line-of-sight:
+     if safeEscapeExists after placing bomb:
+       place bomb
+       move to hide cell
+ 
+3. REPOSITION
+   if no bomb placed this tick:
+     move to cell that:
+       - keeps enemy within blast range
+       - has 2+ escape routes
+       - isn't already in a blast zone
+        
+The cycle naturally becomes: place → hide → wait → place → hide. React fires whenever the enemy does the same to you.
+
+
+Transition back to explore
+if enemy dies or moves > N+2 tiles away:
+  mode = EXPLORE
+
+The +2 hysteresis prevents flickering between modes when a player is right on the edge boundary.
+
+
+---
+
+Bot joining logic:
+
+if n players joins in game then (Max players - n) bots are joined in.
