@@ -164,6 +164,51 @@ export function findNearestSafe(
 }
 
 /**
+ * BFS from start through walkable tiles. Returns the nearest safe cell
+ * reachable within `maxDist` steps. Unlike findSafeCells, this enforces
+ * a step limit to prevent bots from relying on long danger-corridor escapes.
+ * Used for bomb placement decisions where a tight escape is critical.
+ */
+export function findSafeEscape(
+  grid: TileType[],
+  start: Position,
+  dangerMap: Set<number>,
+  maxDist: number,
+): Position | null {
+  const startIdx = toIndex(start.x, start.y);
+  const visited = new Set<number>([startIdx]);
+  const queue: Array<{ idx: number; dist: number }> = [{ idx: startIdx, dist: 0 }];
+
+  while (queue.length > 0) {
+    const { idx: current, dist } = queue.shift()!;
+    const cx = current % GRID_COLS;
+    const cy = Math.floor(current / GRID_COLS);
+
+    // Found a safe cell within range (skip start — that's the bomb tile)
+    if (!dangerMap.has(current) && current !== startIdx) {
+      return { x: cx, y: cy };
+    }
+
+    if (dist >= maxDist) continue;
+
+    for (const [dx, dy] of DIRS) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (!isInBounds(nx, ny)) continue;
+
+      const nIdx = toIndex(nx, ny);
+      if (visited.has(nIdx)) continue;
+      if (!isWalkable(grid, nx, ny)) continue;
+
+      visited.add(nIdx);
+      queue.push({ idx: nIdx, dist: dist + 1 });
+    }
+  }
+
+  return null;
+}
+
+/**
  * Count how many of the 4 cardinal neighbours are walkable and safe.
  */
 export function countEscapeRoutes(

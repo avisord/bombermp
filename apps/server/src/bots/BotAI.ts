@@ -13,7 +13,7 @@ import {
 } from '@bombermp/shared';
 import {
   bfsPath,
-  findSafeCells,
+  findSafeEscape,
   findNearestSafe,
   countEscapeRoutes,
   directionToward,
@@ -35,12 +35,19 @@ const DIRS: [number, number][] = [
 ];
 
 // ─── Difficulty tuning ─────────────────────────────────────────────────────────
-// Bots only re-evaluate decisions every THINK_INTERVAL ticks to avoid jitter
-// and give humans a fighting chance.
 const THINK_INTERVAL = 4;           // re-decide every 4 ticks (200ms)
 const BOMB_COOLDOWN_TICKS = 20;     // min 1s between bomb placements
 const ATTACK_CHANCE = 0.5;          // 50% chance to actually attack when opportunity arises
 const EXPLORE_BOMB_CHANCE = 0.6;    // 60% chance to bomb a wall when exploring
+const MAX_BOMB_SEARCH_DIST = 4;     // how far to search for a bomb placement spot
+
+// ─── Bomb plan: pre-computed move-to-bomb → place → flee-to-hide ──────────────
+
+interface BombPlan {
+  bombPos: Position;
+  hidePos: Position;
+  phase: 'move-to-bomb' | 'place-and-flee';
+}
 
 export class BotAI {
   private mode: BotMode = 'EXPLORE';
@@ -49,9 +56,8 @@ export class BotAI {
   private currentPath: Position[] | null = null;
   private tickCounter = 0;
   private lastBombTick = -999;
-  private lastDecision: BotDecision = { dir: null, action: null };
-  // Sticky flee target — keep fleeing to same spot until we arrive or it becomes unsafe
   private fleeTarget: Position | null = null;
+  private bombPlan: BombPlan | null = null;
 
   constructor(playerId: string) {
     this.playerId = playerId;
@@ -65,12 +71,17 @@ export class BotAI {
     const myTile: Position = { x: Math.round(me.pixelX), y: Math.round(me.pixelY) };
     this.visitedCells.add(toIndex(myTile.x, myTile.y));
 
-    // --- REACT: flee if in danger (always runs, ignores think interval) ---
+    // --- REACT: flee if in danger (always runs, cancels bomb plan) ---
     if (dangerMap.has(toIndex(myTile.x, myTile.y))) {
+      this.bombPlan = null;
       return this.flee(state.grid, myTile, dangerMap);
     }
-    // Clear flee target once we're safe
     this.fleeTarget = null;
+
+    // --- Execute active bomb plan ---
+    if (this.bombPlan) {
+      return this.executeBombPlan(state, dangerMap, me, myTile);
+    }
 
     // --- Throttle decisions to avoid jitter ---
     if (this.tickCounter % THINK_INTERVAL !== 0) {
@@ -81,23 +92,88 @@ export class BotAI {
     this.updateMode(state, me, myTile);
 
     if (this.mode === 'BATTLE') {
-      this.lastDecision = this.battleTick(state, dangerMap, me, myTile);
-    } else {
-      this.lastDecision = this.exploreTick(state, dangerMap, me, myTile);
+      return this.battleTick(state, dangerMap, me, myTile);
     }
-    return this.lastDecision;
+    return this.exploreTick(state, dangerMap, me, myTile);
+  }
+
+  // ─── Bomb plan execution ─────────────────────────────────────────────────────
+
+  private executeBombPlan(state: GameState, dangerMap: Set<number>, me: Player, myTile: Position): BotDecision {
+    const plan = this.bombPlan!;
+
+    if (plan.phase === 'move-to-bomb') {
+      // Validate plan is still viable
+      const bombTile = getTile(state.grid, plan.bombPos.x, plan.bombPos.y);
+      if (bombTile !== TileType.EMPTY && bombTile !== TileType.ITEM) {
+        this.bombPlan = null;
+        return { dir: null, action: null };
+      }
+
+      // Arrived at bomb position?
+      if (myTile.x === plan.bombPos.x && myTile.y === plan.bombPos.y) {
+        plan.phase = 'place-and-flee';
+        this.currentPath = null;
+        // Re-verify escape is still valid
+        const hypo = this.hypotheticalDanger(dangerMap, state.grid, plan.bombPos, me.blastRadius);
+        const escape = findSafeEscape(state.grid, plan.bombPos, hypo, me.blastRadius + 3);
+        if (!escape) {
+          // Escape no longer viable — abort
+          this.bombPlan = null;
+          return { dir: null, action: null };
+        }
+        plan.hidePos = escape;
+        const fleeDir = directionToward(myTile, plan.hidePos, state.grid);
+        if (!fleeDir) {
+          this.bombPlan = null;
+          return { dir: null, action: null };
+        }
+        this.lastBombTick = this.tickCounter;
+        return { dir: fleeDir, action: 'bomb' };
+      }
+
+      // Still moving to bomb position
+      if (!this.currentPath || this.currentPath.length === 0) {
+        this.currentPath = bfsPath(state.grid, myTile, plan.bombPos, dangerMap);
+        if (!this.currentPath) {
+          this.bombPlan = null;
+          return { dir: null, action: null };
+        }
+      }
+      this.advancePath(myTile);
+      if (this.currentPath.length > 0) {
+        const next = this.currentPath[0]!;
+        if (dangerMap.has(toIndex(next.x, next.y))) {
+          this.bombPlan = null;
+          this.currentPath = null;
+          return { dir: null, action: null };
+        }
+        return { dir: tileDirection(myTile, next), action: null };
+      }
+      return { dir: null, action: null };
+    }
+
+    // phase === 'place-and-flee': bomb already placed, flee to hide
+    if (myTile.x === plan.hidePos.x && myTile.y === plan.hidePos.y) {
+      // Arrived at hide spot
+      this.bombPlan = null;
+      return { dir: null, action: null };
+    }
+    const dir = directionToward(myTile, plan.hidePos, state.grid);
+    if (!dir) {
+      this.bombPlan = null;
+      return { dir: null, action: null };
+    }
+    return { dir, action: null };
   }
 
   // ─── Flee (always immediate) ─────────────────────────────────────────────────
 
   private flee(grid: TileType[], myTile: Position, dangerMap: Set<number>): BotDecision {
-    // Reuse existing flee target if still valid (not in danger, reachable)
     if (this.fleeTarget && !dangerMap.has(toIndex(this.fleeTarget.x, this.fleeTarget.y))) {
       const dir = directionToward(myTile, this.fleeTarget, grid);
       if (dir) return { dir, action: null };
     }
-
-    // Find new flee target
     const safeTile = findNearestSafe(grid, myTile, dangerMap);
     if (safeTile) {
       this.fleeTarget = safeTile;
@@ -109,12 +185,10 @@ export class BotAI {
   // ─── Continue current path between think ticks ───────────────────────────────
 
   private continueCurrentAction(grid: TileType[], myTile: Position, dangerMap: Set<number>): BotDecision {
-    // If we have a path, keep following it
     if (this.currentPath && this.currentPath.length > 0) {
       this.advancePath(myTile);
       if (this.currentPath.length > 0) {
         const next = this.currentPath[0]!;
-        // Abandon path if next step is now dangerous
         if (dangerMap.has(toIndex(next.x, next.y))) {
           this.currentPath = null;
           return { dir: null, action: null };
@@ -122,7 +196,6 @@ export class BotAI {
         return { dir: tileDirection(myTile, next), action: null };
       }
     }
-    // No path — just hold still
     return { dir: null, action: null };
   }
 
@@ -159,23 +232,18 @@ export class BotAI {
     me: Player,
     myTile: Position,
   ): BotDecision {
-    // Try to bomb an adjacent soft wall (with cooldown and probability gate)
+    // Try to plan a bomb near a soft wall
     if (
       me.activeBombs < me.maxBombs &&
       this.tickCounter - this.lastBombTick >= BOMB_COOLDOWN_TICKS &&
-      Math.random() < EXPLORE_BOMB_CHANCE
+      Math.random() < EXPLORE_BOMB_CHANCE &&
+      !this.hasNearbyActiveBomb(state, myTile, 2)
     ) {
-      const adjWall = this.findAdjacentSoftWall(state.grid, myTile);
-      if (adjWall && !this.hasNearbyActiveBomb(state, myTile, 2)) {
-        const hypotheticalDanger = this.hypotheticalDanger(dangerMap, state.grid, myTile, me.blastRadius);
-        const safeCells = findSafeCells(state.grid, myTile, hypotheticalDanger);
-        if (safeCells.length > 0) {
-          this.lastBombTick = this.tickCounter;
-          this.currentPath = null;
-          // Don't pass dangerMap — bot can walk through its own blast zone (3s fuse)
-          const fleeDir = directionToward(myTile, safeCells[0]!, state.grid);
-          return { dir: fleeDir, action: 'bomb' };
-        }
+      const plan = this.findBombPlan(state, dangerMap, me, myTile, null);
+      if (plan) {
+        this.bombPlan = plan;
+        this.currentPath = null;
+        return this.executeBombPlan(state, dangerMap, me, myTile);
       }
     }
 
@@ -203,20 +271,155 @@ export class BotAI {
     return { dir: null, action: null };
   }
 
+  // ─── Battle mode ─────────────────────────────────────────────────────────────
+
+  private battleTick(
+    state: GameState,
+    dangerMap: Set<number>,
+    me: Player,
+    myTile: Position,
+  ): BotDecision {
+    const enemies = this.getEnemies(state);
+    const nearestEnemy = this.findNearestEnemy(enemies, myTile);
+    if (!nearestEnemy) return this.exploreTick(state, dangerMap, me, myTile);
+
+    const enemyTile = nearestEnemy.position;
+
+    // --- ATTACK with planning ---
+    if (
+      me.activeBombs < me.maxBombs &&
+      this.tickCounter - this.lastBombTick >= BOMB_COOLDOWN_TICKS &&
+      Math.random() < ATTACK_CHANCE
+    ) {
+      const plan = this.findBombPlan(state, dangerMap, me, myTile, enemyTile);
+      if (plan) {
+        this.bombPlan = plan;
+        this.currentPath = null;
+        return this.executeBombPlan(state, dangerMap, me, myTile);
+      }
+    }
+
+    // --- REPOSITION ---
+    const repositionTarget = this.findRepositionTile(state, dangerMap, me, myTile, enemyTile);
+    if (repositionTarget) {
+      this.currentPath = bfsPath(state.grid, myTile, repositionTarget, dangerMap);
+      if (this.currentPath && this.currentPath.length > 1) {
+        this.advancePath(myTile);
+        if (this.currentPath.length > 0) {
+          return { dir: tileDirection(myTile, this.currentPath[0]!), action: null };
+        }
+      }
+    }
+
+    // Fallback: move toward enemy
+    const dir = directionToward(myTile, enemyTile, state.grid, dangerMap);
+    return { dir, action: null };
+  }
+
+  // ─── Bomb planning ───────────────────────────────────────────────────────────
+
+  /**
+   * Search nearby walkable tiles for the best place to drop a bomb.
+   * For each candidate, simulate the blast and find a hide spot.
+   * Returns the best (bombPos, hidePos) plan, or null if none is safe.
+   *
+   * In EXPLORE: candidates must be adjacent to a soft wall.
+   * In BATTLE: candidates must have the enemy in blast line-of-sight.
+   */
+  private findBombPlan(
+    state: GameState,
+    dangerMap: Set<number>,
+    me: Player,
+    myTile: Position,
+    enemyTile: Position | null,
+  ): BombPlan | null {
+    // BFS from bot to find candidate bomb positions within range
+    const startIdx = toIndex(myTile.x, myTile.y);
+    const visited = new Set<number>([startIdx]);
+    const candidates: Array<{ pos: Position; dist: number }> = [];
+    const queue: Array<{ idx: number; dist: number }> = [{ idx: startIdx, dist: 0 }];
+
+    // Include current tile as a candidate
+    candidates.push({ pos: { ...myTile }, dist: 0 });
+
+    while (queue.length > 0) {
+      const { idx: current, dist } = queue.shift()!;
+      if (dist >= MAX_BOMB_SEARCH_DIST) continue;
+
+      const cx = current % GRID_COLS;
+      const cy = Math.floor(current / GRID_COLS);
+
+      for (const [ddx, ddy] of DIRS) {
+        const nx = cx + ddx;
+        const ny = cy + ddy;
+        if (!isInBounds(nx, ny)) continue;
+        const nIdx = toIndex(nx, ny);
+        if (visited.has(nIdx)) continue;
+        const tile = getTile(state.grid, nx, ny);
+        if (tile !== TileType.EMPTY && tile !== TileType.ITEM) continue;
+        if (dangerMap.has(nIdx)) continue;
+        visited.add(nIdx);
+        candidates.push({ pos: { x: nx, y: ny }, dist: dist + 1 });
+        queue.push({ idx: nIdx, dist: dist + 1 });
+      }
+    }
+
+    let bestPlan: BombPlan | null = null;
+    let bestScore = -Infinity;
+
+    for (const { pos: candidatePos, dist: distToCandidate } of candidates) {
+      // Filter: must be useful
+      if (enemyTile) {
+        // BATTLE: candidate must have enemy in blast line-of-sight
+        if (!this.isInBlastLineOfSight(state.grid, candidatePos, enemyTile, me.blastRadius)) {
+          continue;
+        }
+      } else {
+        // EXPLORE: candidate must be adjacent to a soft wall
+        if (!this.findAdjacentSoftWall(state.grid, candidatePos)) {
+          continue;
+        }
+      }
+
+      // Simulate blast and find escape
+      const hypo = this.hypotheticalDanger(dangerMap, state.grid, candidatePos, me.blastRadius);
+      const escapeTo = findSafeEscape(state.grid, candidatePos, hypo, me.blastRadius + 3);
+      if (!escapeTo) continue;
+
+      // Verify flee direction exists from bomb pos
+      const fleeDir = directionToward(candidatePos, escapeTo, state.grid);
+      if (!fleeDir) continue;
+
+      // Score: prefer closer bomb spots with better escape routes
+      const escapeRoutes = countEscapeRoutes(state.grid, escapeTo, hypo);
+      const score = escapeRoutes * 2 - distToCandidate;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPlan = {
+          bombPos: candidatePos,
+          hidePos: escapeTo,
+          phase: distToCandidate === 0 ? 'place-and-flee' : 'move-to-bomb',
+        };
+      }
+    }
+
+    return bestPlan;
+  }
+
+  // ─── Explore helpers ─────────────────────────────────────────────────────────
+
   private pickExploreTarget(
     state: GameState,
     myTile: Position,
     dangerMap: Set<number>,
   ): Position | null {
-    // 1. Nearest unvisited reachable cell
     const unvisited = this.bfsFirstUnvisited(state.grid, myTile, dangerMap);
     if (unvisited) return unvisited;
 
-    // 2. Cell adjacent to a soft wall
     const wallAdj = this.findCellNearSoftWall(state.grid, myTile, dangerMap);
     if (wallAdj) return wallAdj;
 
-    // 3. Move toward nearest enemy
     const enemies = this.getEnemies(state);
     if (enemies.length > 0) {
       const nearest = this.findNearestEnemy(enemies, myTile);
@@ -299,54 +502,7 @@ export class BotAI {
     return null;
   }
 
-  // ─── Battle mode ─────────────────────────────────────────────────────────────
-
-  private battleTick(
-    state: GameState,
-    dangerMap: Set<number>,
-    me: Player,
-    myTile: Position,
-  ): BotDecision {
-    const enemies = this.getEnemies(state);
-    const nearestEnemy = this.findNearestEnemy(enemies, myTile);
-    if (!nearestEnemy) return this.exploreTick(state, dangerMap, me, myTile);
-
-    const enemyTile = nearestEnemy.position;
-
-    // --- ATTACK (with cooldown and probability gate) ---
-    if (
-      me.activeBombs < me.maxBombs &&
-      this.tickCounter - this.lastBombTick >= BOMB_COOLDOWN_TICKS &&
-      Math.random() < ATTACK_CHANCE &&
-      this.isInBlastLineOfSight(state.grid, myTile, enemyTile, me.blastRadius)
-    ) {
-      const hypotheticalDanger = this.hypotheticalDanger(dangerMap, state.grid, myTile, me.blastRadius);
-      const safeCells = findSafeCells(state.grid, myTile, hypotheticalDanger);
-      if (safeCells.length > 0) {
-        this.lastBombTick = this.tickCounter;
-        this.currentPath = null;
-        // Don't pass dangerMap — bot can walk through its own blast zone (3s fuse)
-        const fleeDir = directionToward(myTile, safeCells[0]!, state.grid);
-        return { dir: fleeDir, action: 'bomb' };
-      }
-    }
-
-    // --- REPOSITION ---
-    const repositionTarget = this.findRepositionTile(state, dangerMap, me, myTile, enemyTile);
-    if (repositionTarget) {
-      this.currentPath = bfsPath(state.grid, myTile, repositionTarget, dangerMap);
-      if (this.currentPath && this.currentPath.length > 1) {
-        this.advancePath(myTile);
-        if (this.currentPath.length > 0) {
-          return { dir: tileDirection(myTile, this.currentPath[0]!), action: null };
-        }
-      }
-    }
-
-    // Fallback: move toward enemy
-    const dir = directionToward(myTile, enemyTile, state.grid, dangerMap);
-    return { dir, action: null };
-  }
+  // ─── Battle helpers ──────────────────────────────────────────────────────────
 
   private isInBlastLineOfSight(
     grid: TileType[],
@@ -355,7 +511,6 @@ export class BotAI {
     blastRadius: number,
   ): boolean {
     if (from.x !== target.x && from.y !== target.y) return false;
-
     const dist = manhattanDistance(from, target);
     if (dist > blastRadius || dist === 0) return false;
 
@@ -425,9 +580,8 @@ export class BotAI {
     return bestTile;
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────────
+  // ─── Shared helpers ──────────────────────────────────────────────────────────
 
-  /** Pop path entries we've already reached */
   private advancePath(myTile: Position): void {
     while (
       this.currentPath &&
