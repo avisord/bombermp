@@ -3,6 +3,8 @@ import type { RoomState, RoomPlayer, PublicRoomInfo } from '@bombermp/shared';
 import type { PlayerAppearance } from '../game/appearance.js';
 import { drawPlayerPreview } from '../game/renderer.js';
 import { iconPath } from '../assets/registry.js';
+import { fetchServerList, pingAllServers } from '../socket/servers.js';
+import type { ServerInfo, ServerStatus } from '../socket/servers.js';
 
 // ─── Design constants ─────────────────────────────────────────────────────────
 
@@ -45,6 +47,103 @@ export interface ShowLobbyOptions {
   onNameSave: (name: string) => void;
   onCustomize?: () => void;
   prefillRoomId?: string;
+  serverName?: string;
+  onServerChange?: () => void;
+}
+
+// ─── Server select ───────────────────────────────────────────────────────────
+
+export interface ShowServerSelectOptions {
+  onServerSelected: (server: ServerInfo) => void;
+}
+
+export function showServerSelect(root: HTMLElement, options: ShowServerSelectOptions): void {
+  clear(root);
+  root.style.display = 'flex';
+  injectStyles();
+
+  let statuses: ServerStatus[] = [];
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  function cleanup(): void {
+    if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null; }
+  }
+  root.addEventListener('bmp:lobby-cleanup', cleanup, { once: true });
+
+  function latencyClass(ms: number): string {
+    if (ms < 80)  return 'bmp-server__latency--good';
+    if (ms < 150) return 'bmp-server__latency--ok';
+    return 'bmp-server__latency--bad';
+  }
+
+  function renderList(): void {
+    const listEl = root.querySelector<HTMLDivElement>('#server-list');
+    if (!listEl) return;
+
+    if (statuses.length === 0) {
+      listEl.innerHTML = '<p class="bmp-server__loading">Checking servers\u2026</p>';
+      return;
+    }
+
+    listEl.innerHTML = statuses.map((s) => {
+      if (!s.online) {
+        return `
+          <button class="bmp-play-option bmp-server-row bmp-server-row--offline" disabled>
+            <div class="bmp-play-option__text">
+              <span class="bmp-play-option__title">${escHtml(s.info.name)}</span>
+              <span class="bmp-play-option__sub">Offline</span>
+            </div>
+            <span class="bmp-server__badge bmp-server__latency--offline">--</span>
+          </button>
+        `;
+      }
+      return `
+        <button class="bmp-play-option bmp-server-row" data-slug="${escHtml(s.info.slug)}">
+          <div class="bmp-play-option__text">
+            <span class="bmp-play-option__title">${escHtml(s.info.name)}</span>
+            <span class="bmp-play-option__sub">${s.players} player${s.players !== 1 ? 's' : ''} online</span>
+          </div>
+          <span class="bmp-server__badge ${latencyClass(s.latencyMs)}">${s.latencyMs}ms</span>
+        </button>
+      `;
+    }).join('');
+
+    // Bind click handlers
+    for (const btn of listEl.querySelectorAll<HTMLButtonElement>('.bmp-server-row[data-slug]')) {
+      btn.addEventListener('click', () => {
+        const slug = btn.dataset['slug']!;
+        const server = statuses.find((s) => s.info.slug === slug);
+        if (server) {
+          cleanup();
+          options.onServerSelected(server.info);
+        }
+      });
+    }
+  }
+
+  async function refresh(): Promise<void> {
+    const servers = await fetchServerList();
+    statuses = await pingAllServers(servers);
+    renderList();
+  }
+
+  // Initial render
+  root.innerHTML = `
+    <div class="bmp-dec bmp-dec--circle-yellow" aria-hidden="true"></div>
+    <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
+
+    ${logoHtml()}
+
+    ${cardHtml({
+      headerClass: 'bmp-card__header--violet',
+      title: 'Select Server',
+      style: 'width:100%',
+      body: '<div id="server-list"><p class="bmp-server__loading">Checking servers\u2026</p></div>',
+    })}
+  `;
+
+  void refresh();
+  pollTimer = setInterval(() => { void refresh(); }, 10_000);
 }
 
 // ─── HTML component helpers ───────────────────────────────────────────────────
@@ -149,6 +248,7 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
       <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
 
       ${logoHtml()}
+      ${options.serverName ? `<button class="bmp-server-pill" id="server-change-btn">${escHtml(options.serverName)}</button>` : ''}
 
       <!-- Identity card: name (left) + avatar (right) -->
       <div class="bmp-card" style="width:100%">
@@ -248,6 +348,11 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
     });
 
     root.querySelector('#avatar-edit-btn')!.addEventListener('click', () => options.onCustomize?.());
+
+    const serverChangeBtn = root.querySelector<HTMLButtonElement>('#server-change-btn');
+    if (serverChangeBtn && options.onServerChange) {
+      serverChangeBtn.addEventListener('click', options.onServerChange);
+    }
 
     root.querySelector('#create-btn')!.addEventListener('click', () => {
       setError('');
@@ -1388,6 +1493,59 @@ function injectStyles(): void {
       .bmp-btn--primary:hover:not(:disabled),
       .bmp-btn--secondary:hover:not(:disabled) { box-shadow: 4px 4px 0px 0px #1E293B; }
       .bmp-card { box-shadow: 3px 3px 0px 0px #1E293B; }
+    }
+
+    /* Server select */
+    .bmp-server-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: #EDE9FE;
+      color: #6D28D9;
+      border: 2px solid #8B5CF6;
+      border-radius: 999px;
+      padding: 0.25rem 0.85rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      font-family: 'Nunito', sans-serif;
+      cursor: pointer;
+      margin-top: -0.5rem;
+      margin-bottom: 0.25rem;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .bmp-server-pill:hover {
+      background: #DDD6FE;
+      transform: scale(1.04);
+    }
+    .bmp-server-pill::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #34D399;
+    }
+
+    .bmp-server-row--offline {
+      opacity: 0.45;
+      cursor: not-allowed !important;
+    }
+    .bmp-server__badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .bmp-server__latency--good  { background: #D1FAE5; color: #065F46; }
+    .bmp-server__latency--ok    { background: #FEF3C7; color: #92400E; }
+    .bmp-server__latency--bad   { background: #FEE2E2; color: #991B1B; }
+    .bmp-server__latency--offline { background: #E2E8F0; color: #64748B; }
+    .bmp-server__loading {
+      text-align: center;
+      color: #64748B;
+      font-size: 0.9rem;
+      padding: 1rem;
     }
 
     /* Honour reduced-motion */

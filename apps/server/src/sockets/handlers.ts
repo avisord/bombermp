@@ -12,7 +12,7 @@ import { PlayerModel } from '../db/models/Player.js';
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
-export function registerHandlers(io: IoServer): void {
+export function registerHandlers(io: IoServer): RoomManager {
   const roomManager = new RoomManager(io);
 
   io.on('connection', (socket: IoSocket) => {
@@ -126,6 +126,8 @@ export function registerHandlers(io: IoServer): void {
       if (roomId) roomManager.leaveRoom(roomId, playerId);
     });
   });
+
+  return roomManager;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

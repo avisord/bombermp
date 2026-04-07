@@ -31,13 +31,27 @@ export function setStoredDisplayName(name: string): void {
   localStorage.setItem(DISPLAY_NAME_KEY, name);
 }
 
-// ─── Socket instance ──────────────────────────────────────────────────────────
+// ─── Socket lifecycle ─────────────────────────────────────────────────────────
 
-const WS_URL = (import.meta.env['VITE_WS_URL'] as string | undefined) ?? 'http://localhost:3001';
+export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(WS_URL, {
-  autoConnect: false,
-  withCredentials: true,
-  transports: ['websocket', 'polling'],
-  auth: { playerId: getOrCreatePlayerId() },
-});
+let activeSocket: AppSocket | null = null;
+
+export function getSocket(): AppSocket {
+  if (!activeSocket) throw new Error('No active socket — call connectToServer first');
+  return activeSocket;
+}
+
+export function connectToServer(url: string): AppSocket {
+  if (activeSocket) {
+    activeSocket.removeAllListeners();
+    activeSocket.disconnect();
+  }
+  activeSocket = io(url, {
+    autoConnect: false,
+    withCredentials: true,
+    transports: ['websocket', 'polling'],
+    auth: { playerId: getOrCreatePlayerId() },
+  });
+  return activeSocket;
+}

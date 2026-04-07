@@ -8,7 +8,15 @@ import {
   Direction,
 } from '@bombermp/shared';
 import type { RoomState } from '@bombermp/shared';
-import { socket, getOrCreatePlayerId, getStoredDisplayName, setStoredDisplayName } from './socket/client.js';
+import {
+  getOrCreatePlayerId,
+  getStoredDisplayName,
+  setStoredDisplayName,
+  connectToServer,
+} from './socket/client.js';
+import type { AppSocket } from './socket/client.js';
+import { fetchServerList, pingServer, pingAllServers } from './socket/servers.js';
+import type { ServerInfo } from './socket/servers.js';
 import { loadAppearance, saveAppearance } from './game/appearance.js';
 import type { PlayerAppearance } from './game/appearance.js';
 import { showCustomize } from './ui/customize.js';
@@ -24,6 +32,7 @@ import {
   showLobbyError,
   showWaitingRoom,
   showGameOver,
+  showServerSelect,
   updatePublicRoomsList,
   hideUI,
   showUI,
@@ -65,6 +74,9 @@ const playerSlotMap = new Map<string, number>();
 let rtt            = 0;
 let rafId: number | null = null;
 let lastRoomState: RoomState | null = null;
+let socket: AppSocket | null = null;
+let latencyInterval: ReturnType<typeof setInterval> | null = null;
+let currentServerName: string | null = null;
 
 // ─── Appearance & direction ────────────────────────────────────────────────────
 let myAppearance: PlayerAppearance = loadAppearance();
@@ -74,7 +86,7 @@ const playerPrevPixel  = new Map<string, { x: number; y: number }>();
 // ─── Hash utilities ───────────────────────────────────────────────────────────
 
 function setRoomHash(roomId: string): void {
-  history.replaceState(null, '', `#r${roomId}`);
+  history.replaceState(null, '', `${window.location.pathname}${window.location.search}#r${roomId}`);
 }
 
 function clearRoomHash(): void {
@@ -84,6 +96,18 @@ function clearRoomHash(): void {
 function getRoomIdFromHash(): string | null {
   const m = window.location.hash.match(/^#r([A-Z0-9]{1,16})$/i);
   return m ? m[1]!.toUpperCase() : null;
+}
+
+// ─── Server slug URL persistence ──────────────────────────────────────────────
+
+function getServerSlugFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get('server');
+}
+
+function setServerSlug(slug: string): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set('server', slug);
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
 }
 
 // ─── Game view show / hide ────────────────────────────────────────────────────
@@ -147,61 +171,17 @@ function buildSlotMap(roomState: RoomState): void {
   }
 }
 
-// ─── Socket events ────────────────────────────────────────────────────────────
+// ─── Socket event registration ───────────────────────────────────────────────
 
-socket.on('room:state', (state: RoomState) => {
-  lastRoomState = state;
-  buildSlotMap(state);
-  setRoomHash(state.roomId);
+function registerSocketHandlers(sock: AppSocket): void {
+  sock.on('room:state', (state: RoomState) => {
+    lastRoomState = state;
+    buildSlotMap(state);
+    setRoomHash(state.roomId);
 
-  switch (state.status) {
-    case RoomStatus.WAITING:
-    case RoomStatus.STARTING:
-      stopRenderLoop();
-      hideGameView();
-      input.detach(document);
-      gameState.reset();
-      predictor.reset();
-      interpolator.reset();
-      clearExplosionTimestamps();
-      playerDirections.clear();
-      playerPrevPixel.clear();
-      showUI(uiRoot);
-
-      if (isTestMode) {
-        // Auto-start immediately, skipping the countdown entirely
-        uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Setting up game\u2026</p>';
-        socket.emit('room:start', { skipCountdown: true });
-        break;
-      }
-
-      showWaitingRoom(
-        uiRoot,
-        state,
-        myPlayerId,
-        () => socket.emit('room:start'),
-        () => {
-          socket.emit('room:leave');
-          clearRoomHash();
-          showLobby(uiRoot, makeLobbyOptions());
-        },
-        onConfigure,
-      );
-      if (state.status === RoomStatus.STARTING && state.countdownEndsAt) {
-        tickCountdown(state.countdownEndsAt, state);
-      }
-      break;
-
-    case RoomStatus.IN_GAME:
-      if (state.gameState && state.gameState.players[myPlayerId]) {
-        const me = state.gameState.players[myPlayerId]!;
-        gameState.init(state.gameState);
-        predictor.init(me.pixelX, me.pixelY);
-        showGameView();
-        input.attach(document);
-        startRenderLoop();
-      } else {
-        // Rejoined mid-game after refresh — show waiting room as spectator
+    switch (state.status) {
+      case RoomStatus.WAITING:
+      case RoomStatus.STARTING:
         stopRenderLoop();
         hideGameView();
         input.detach(document);
@@ -209,157 +189,197 @@ socket.on('room:state', (state: RoomState) => {
         predictor.reset();
         interpolator.reset();
         clearExplosionTimestamps();
+        playerDirections.clear();
+        playerPrevPixel.clear();
         showUI(uiRoot);
+
+        if (isTestMode) {
+          uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Setting up game\u2026</p>';
+          sock.emit('room:start', { skipCountdown: true });
+          break;
+        }
+
         showWaitingRoom(
           uiRoot,
           state,
           myPlayerId,
-          () => socket.emit('room:start'),
+          () => sock.emit('room:start'),
           () => {
-            socket.emit('room:leave');
+            sock.emit('room:leave');
             clearRoomHash();
             showLobby(uiRoot, makeLobbyOptions());
           },
           onConfigure,
-          true, // gameInProgress
         );
-      }
-      break;
+        if (state.status === RoomStatus.STARTING && state.countdownEndsAt) {
+          tickCountdown(state.countdownEndsAt, state);
+        }
+        break;
 
-    case RoomStatus.GAME_OVER:
-      break;
-  }
-});
-
-socket.on('game:tick', (diff) => {
-  // Register any new bombs placed by the local player as passable before applying
-  // the diff (the grid update arrives in the same diff, so we need to mark it
-  // passable before the predictor sees the BOMB tile).
-  if (diff.bombs) {
-    for (const bomb of Object.values(diff.bombs)) {
-      // Mark passable if: (a) local player placed it, or (b) the bomb spawned
-      // on a tile the local player's hitbox already overlaps (opponent placed it
-      // while we were standing there — server mirrors this logic server-side).
-      if (bomb.ownerId === myPlayerId || predictor.overlapsNewBomb(bomb.position.x, bomb.position.y)) {
-        predictor.addPassableBomb(bomb.position.x, bomb.position.y);
-      }
-    }
-  }
-
-  // Feed interpolator before applying diff (captures prev→curr transition)
-  if (gameState.state?.players) {
-    interpolator.onTick(gameState.state.players, diff.players);
-  }
-
-  gameState.applyDiff(diff);
-  socket.emit('player:input', input.getCurrentInput());
-
-  // Update facing directions from position deltas
-  const allPlayers = gameState.state?.players;
-  if (allPlayers) {
-    for (const [id, player] of Object.entries(allPlayers)) {
-      const prev = playerPrevPixel.get(id);
-      if (prev) {
-        const dx = player.pixelX - prev.x;
-        const dy = player.pixelY - prev.y;
-        if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-          playerDirections.set(id,
-            Math.abs(dx) >= Math.abs(dy)
-              ? (dx > 0 ? Direction.RIGHT : Direction.LEFT)
-              : (dy > 0 ? Direction.DOWN  : Direction.UP),
+      case RoomStatus.IN_GAME:
+        if (state.gameState && state.gameState.players[myPlayerId]) {
+          const me = state.gameState.players[myPlayerId]!;
+          gameState.init(state.gameState);
+          predictor.init(me.pixelX, me.pixelY);
+          showGameView();
+          input.attach(document);
+          startRenderLoop();
+        } else {
+          stopRenderLoop();
+          hideGameView();
+          input.detach(document);
+          gameState.reset();
+          predictor.reset();
+          interpolator.reset();
+          clearExplosionTimestamps();
+          showUI(uiRoot);
+          showWaitingRoom(
+            uiRoot,
+            state,
+            myPlayerId,
+            () => sock.emit('room:start'),
+            () => {
+              sock.emit('room:leave');
+              clearRoomHash();
+              showLobby(uiRoot, makeLobbyOptions());
+            },
+            onConfigure,
+            true,
           );
         }
-      }
-      playerPrevPixel.set(id, { x: player.pixelX, y: player.pixelY });
+        break;
+
+      case RoomStatus.GAME_OVER:
+        break;
     }
-  }
-  // Local player: live input direction is more responsive than position delta
-  const liveDir = input.currentDir;
-  if (liveDir !== null) playerDirections.set(myPlayerId, liveDir);
+  });
 
-  // Reconcile predictor with authoritative server position
-  const me = gameState.state?.players[myPlayerId];
-  if (me) {
-    predictor.reconcile(me.pixelX, me.pixelY);
-    updateHUDStats(me.activeBombs, me.maxBombs, me.blastRadius);
-  }
-});
+  sock.on('game:tick', (diff) => {
+    if (diff.bombs) {
+      for (const bomb of Object.values(diff.bombs)) {
+        if (bomb.ownerId === myPlayerId || predictor.overlapsNewBomb(bomb.position.x, bomb.position.y)) {
+          predictor.addPassableBomb(bomb.position.x, bomb.position.y);
+        }
+      }
+    }
 
-socket.on('game:over', ({ winnerId }) => {
-  // Stop inputs and prediction immediately — player can no longer act.
-  input.detach(document);
-  predictor.reset();
+    if (gameState.state?.players) {
+      interpolator.onTick(gameState.state.players, diff.players);
+    }
 
-  // Keep the render loop alive long enough for the explosion animation to finish,
-  // then freeze the canvas and show the game over overlay.
-  const players = { ...gameState.state?.players };
-  setTimeout(() => {
+    gameState.applyDiff(diff);
+    sock.emit('player:input', input.getCurrentInput());
+
+    const allPlayers = gameState.state?.players;
+    if (allPlayers) {
+      for (const [id, player] of Object.entries(allPlayers)) {
+        const prev = playerPrevPixel.get(id);
+        if (prev) {
+          const dx = player.pixelX - prev.x;
+          const dy = player.pixelY - prev.y;
+          if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+            playerDirections.set(id,
+              Math.abs(dx) >= Math.abs(dy)
+                ? (dx > 0 ? Direction.RIGHT : Direction.LEFT)
+                : (dy > 0 ? Direction.DOWN  : Direction.UP),
+            );
+          }
+        }
+        playerPrevPixel.set(id, { x: player.pixelX, y: player.pixelY });
+      }
+    }
+    const liveDir = input.currentDir;
+    if (liveDir !== null) playerDirections.set(myPlayerId, liveDir);
+
+    const me = gameState.state?.players[myPlayerId];
+    if (me) {
+      predictor.reconcile(me.pixelX, me.pixelY);
+      updateHUDStats(me.activeBombs, me.maxBombs, me.blastRadius);
+    }
+  });
+
+  sock.on('game:over', ({ winnerId }) => {
+    input.detach(document);
+    predictor.reset();
+
+    const players = { ...gameState.state?.players };
+    setTimeout(() => {
+      stopRenderLoop();
+      showGameOver(uiRoot, winnerId, players);
+    }, EXPLOSION_DURATION_MS + 100);
+  });
+
+  sock.on('rooms:list', ({ rooms }) => {
+    updatePublicRoomsList(uiRoot, rooms);
+  });
+
+  sock.on('latency:pong', ({ clientTime }: { clientTime: number }) => {
+    rtt = Date.now() - clientTime;
+    updateHUDLatency(rtt);
+  });
+
+  sock.on('error', ({ message }: { message: string }) => {
+    console.error('[server error]', message);
+    if (isTestMode) {
+      uiRoot.innerHTML = `<p style="color:#DC2626;font-family:sans-serif;text-align:center;padding:2rem">Error: ${message}</p>`;
+      return;
+    }
+    if (getRoomIdFromHash()) clearRoomHash();
+    showLobbyError(uiRoot, message);
+  });
+
+  sock.on('connect', () => {
+    console.log('[socket] connected:', sock.id);
+    sock.emit('room:list');
+  });
+
+  sock.on('disconnect', (reason) => {
+    console.warn('[socket] disconnected:', reason);
     stopRenderLoop();
-    showGameOver(uiRoot, winnerId, players);
-  }, EXPLOSION_DURATION_MS + 100);
-});
+    input.detach(document);
+    hideGameView();
+    if (isTestMode) {
+      uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Disconnected. Reconnecting\u2026</p>';
+    } else {
+      showLobby(uiRoot, makeLobbyOptions());
+    }
+  });
 
-socket.on('rooms:list', ({ rooms }) => {
-  updatePublicRoomsList(uiRoot, rooms);
-});
+  // Latency ping
+  if (latencyInterval !== null) clearInterval(latencyInterval);
+  latencyInterval = setInterval(() => {
+    if (sock.connected) sock.emit('latency:ping', { clientTime: Date.now() });
+  }, LATENCY_PING_INTERVAL_MS);
+}
 
-socket.on('latency:pong', ({ clientTime }: { clientTime: number }) => {
-  rtt = Date.now() - clientTime;
-  updateHUDLatency(rtt);
-});
+// ─── Connect to a server and wire everything up ──────────────────────────────
 
-socket.on('error', ({ message }: { message: string }) => {
-  console.error('[server error]', message);
-  if (isTestMode) {
-    uiRoot.innerHTML = `<p style="color:#DC2626;font-family:sans-serif;text-align:center;padding:2rem">Error: ${message}</p>`;
-    return;
-  }
-  if (getRoomIdFromHash()) clearRoomHash();
-  showLobbyError(uiRoot, message);
-});
-
-socket.on('connect', () => {
-  console.log('[socket] connected:', socket.id);
-  socket.emit('room:list');
-});
-
-socket.on('disconnect', (reason) => {
-  console.warn('[socket] disconnected:', reason);
-  stopRenderLoop();
-  input.detach(document);
-  hideGameView();
-  if (isTestMode) {
-    uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Disconnected. Reconnecting\u2026</p>';
-  } else {
-    showLobby(uiRoot, makeLobbyOptions());
-  }
-});
-
-// ─── Latency ping ─────────────────────────────────────────────────────────────
-
-setInterval(() => {
-  if (socket.connected) socket.emit('latency:ping', { clientTime: Date.now() });
-}, LATENCY_PING_INTERVAL_MS);
+function switchToServer(server: ServerInfo): void {
+  currentServerName = server.name;
+  setServerSlug(server.slug);
+  socket = connectToServer(server.url);
+  registerSocketHandlers(socket);
+}
 
 // ─── Lobby callbacks ──────────────────────────────────────────────────────────
 
 function onCreateRoom(name: string): void {
   setStoredDisplayName(name);
-  socket.emit('room:create', { displayName: name });
+  socket!.emit('room:create', { displayName: name });
 }
 
 function onJoinRoom(roomId: string, name: string): void {
   setStoredDisplayName(name);
-  socket.emit('room:join', { roomId, displayName: name });
+  socket!.emit('room:join', { roomId, displayName: name });
 }
 
 function onJoinPublicRoom(roomId: string, name: string): void {
   setStoredDisplayName(name);
-  socket.emit('room:join', { roomId, displayName: name });
+  socket!.emit('room:join', { roomId, displayName: name });
 }
 
 function onConfigure(isPublic: boolean): void {
-  socket.emit('room:configure', { isPublic });
+  socket!.emit('room:configure', { isPublic });
 }
 
 function makeLobbyOptions(prefillRoomId?: string): ShowLobbyOptions {
@@ -369,9 +389,11 @@ function makeLobbyOptions(prefillRoomId?: string): ShowLobbyOptions {
     onCreate: onCreateRoom,
     onJoinPrivate: onJoinRoom,
     onJoinPublic: onJoinPublicRoom,
-    onRequestRoomList: () => { if (socket.connected) socket.emit('room:list'); },
+    onRequestRoomList: () => { if (socket?.connected) socket.emit('room:list'); },
     onNameSave: setStoredDisplayName,
     onCustomize,
+    serverName: currentServerName ?? undefined,
+    onServerChange: showServerSelectScreen,
   };
   if (prefillRoomId !== undefined) opts.prefillRoomId = prefillRoomId;
   return opts;
@@ -397,33 +419,123 @@ function tickCountdown(endsAt: number, cachedState: RoomState): void {
   }, 250);
 }
 
+// ─── Server select screen ────────────────────────────────────────────────────
+
+function showServerSelectScreen(): void {
+  // Disconnect if currently connected
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+    socket = null;
+  }
+  if (latencyInterval !== null) {
+    clearInterval(latencyInterval);
+    latencyInterval = null;
+  }
+  stopRenderLoop();
+  hideGameView();
+  input.detach(document);
+
+  showServerSelect(uiRoot, {
+    onServerSelected: (server) => {
+      switchToServer(server);
+      const hashRoomId = getRoomIdFromHash();
+      const storedName = getStoredDisplayName();
+
+      if (isTestMode) {
+        const name = storedName || 'TestPlayer';
+        uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Connecting\u2026</p>';
+        socket!.once('connect', () => {
+          setStoredDisplayName(name);
+          socket!.emit('room:create', { displayName: name });
+        });
+      } else if (hashRoomId && storedName) {
+        socket!.once('connect', () => {
+          socket!.emit('room:join', { roomId: hashRoomId, displayName: storedName });
+        });
+        showLobby(uiRoot, makeLobbyOptions());
+      } else if (hashRoomId) {
+        showLobby(uiRoot, makeLobbyOptions(hashRoomId));
+      } else {
+        showLobby(uiRoot, makeLobbyOptions());
+      }
+      socket!.connect();
+    },
+  });
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
-// Build the HUD DOM once (it persists across game rounds)
 initHUD(gameWrapper);
-
-// Load sprites in the background — renderer falls back to canvas primitives
-// until they arrive so the lobby is never blocked
 void loadSprites();
 
-const hashRoomId  = getRoomIdFromHash();
-const storedName  = getStoredDisplayName();
+async function boot(): Promise<void> {
+  const servers = await fetchServerList();
+  const slugFromUrl = getServerSlugFromUrl();
 
-if (isTestMode) {
-  const name = storedName || 'TestPlayer';
-  uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Connecting\u2026</p>';
-  socket.once('connect', () => {
-    setStoredDisplayName(name);
-    socket.emit('room:create', { displayName: name });
-  });
-} else if (hashRoomId && storedName) {
-  socket.once('connect', () => {
-    socket.emit('room:join', { roomId: hashRoomId, displayName: storedName });
-  });
-  showLobby(uiRoot, makeLobbyOptions());
-} else if (hashRoomId) {
-  showLobby(uiRoot, makeLobbyOptions(hashRoomId));
-} else {
-  showLobby(uiRoot, makeLobbyOptions());
+  // If a server is persisted in URL, try to connect directly
+  if (slugFromUrl) {
+    const match = servers.find((s) => s.slug === slugFromUrl);
+    if (match) {
+      const status = await pingServer(match);
+      if (status.online) {
+        switchToServer(match);
+        const hashRoomId = getRoomIdFromHash();
+        const storedName = getStoredDisplayName();
+
+        if (isTestMode) {
+          const name = storedName || 'TestPlayer';
+          uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Connecting\u2026</p>';
+          socket!.once('connect', () => {
+            setStoredDisplayName(name);
+            socket!.emit('room:create', { displayName: name });
+          });
+        } else if (hashRoomId && storedName) {
+          socket!.once('connect', () => {
+            socket!.emit('room:join', { roomId: hashRoomId, displayName: storedName });
+          });
+          showLobby(uiRoot, makeLobbyOptions());
+        } else if (hashRoomId) {
+          showLobby(uiRoot, makeLobbyOptions(hashRoomId));
+        } else {
+          showLobby(uiRoot, makeLobbyOptions());
+        }
+        socket!.connect();
+        return;
+      }
+    }
+  }
+
+  // If only one server, skip selection and connect directly
+  if (servers.length === 1) {
+    const only = servers[0]!;
+    switchToServer(only);
+    const hashRoomId = getRoomIdFromHash();
+    const storedName = getStoredDisplayName();
+
+    if (isTestMode) {
+      const name = storedName || 'TestPlayer';
+      uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Connecting\u2026</p>';
+      socket!.once('connect', () => {
+        setStoredDisplayName(name);
+        socket!.emit('room:create', { displayName: name });
+      });
+    } else if (hashRoomId && storedName) {
+      socket!.once('connect', () => {
+        socket!.emit('room:join', { roomId: hashRoomId, displayName: storedName });
+      });
+      showLobby(uiRoot, makeLobbyOptions());
+    } else if (hashRoomId) {
+      showLobby(uiRoot, makeLobbyOptions(hashRoomId));
+    } else {
+      showLobby(uiRoot, makeLobbyOptions());
+    }
+    socket!.connect();
+    return;
+  }
+
+  // Multiple servers — show selection screen
+  showServerSelectScreen();
 }
-socket.connect();
+
+void boot();

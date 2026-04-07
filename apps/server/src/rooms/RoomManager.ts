@@ -46,6 +46,14 @@ export class RoomManager {
 
   // ─── Public API ──────────────────────────────────────────────────────────────
 
+  getTotalPlayerCount(): number {
+    let total = 0;
+    for (const room of this.rooms.values()) {
+      total += room.players.size;
+    }
+    return total;
+  }
+
   createRoom(playerId: string, displayName: string, socketId: string, isPublic = true): RoomState {
     const roomId = uuidv4().slice(0, 8).toUpperCase();
     const room: ServerRoom = {

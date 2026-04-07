@@ -3,6 +3,8 @@
 #
 # The env file is always written to ./environments/.env.server by send.sh,
 # regardless of which environment (prod / stage) is being deployed.
+#
+# Frontend is deployed via GitHub Pages — only server, mongodb, and nginx are needed here.
 
 services:
 
@@ -26,12 +28,6 @@ services:
       mongodb:
         condition: service_healthy
 
-  client:
-    image: bombermp/client:latest
-    restart: unless-stopped
-    depends_on:
-      - server
-
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -43,7 +39,6 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - server
-      - client
 
 volumes:
   mongo_data:

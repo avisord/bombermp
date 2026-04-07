@@ -70,6 +70,12 @@ transfer_configs() {
   rsync_file "$SERVER" "$REPO_ROOT/deploy/scripts/init_certs.sh" \
     "${REMOTE_ROOT_DIRECTORY}deploy/scripts/"
 
+  rsync_file "$SERVER" "$REPO_ROOT/deploy/scripts/common.sh" \
+    "${REMOTE_ROOT_DIRECTORY}deploy/scripts/"
+
+  rsync_file "$SERVER" "$REPO_ROOT/deploy/scripts/config.sh" \
+    "${REMOTE_ROOT_DIRECTORY}deploy/scripts/"
+
   echo "[send] Transferring docker-compose.image.yml…"
   rsync_file "$SERVER" "$REPO_ROOT/deploy/docker-compose.image.yml" \
     "${REMOTE_ROOT_DIRECTORY}deploy/"
@@ -79,7 +85,6 @@ transfer_configs() {
 
 setup_remote_dirs
 transfer_and_load_tar server
-transfer_and_load_tar client
 transfer_configs
 
 echo "[send] Done."

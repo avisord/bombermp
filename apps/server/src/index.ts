@@ -23,10 +23,6 @@ app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
 app.use(cookieParser(process.env['COOKIE_SECRET'] ?? 'dev-secret'));
 app.use(express.json());
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', ts: Date.now() });
-});
-
 // ─── HTTP + Socket.io ─────────────────────────────────────────────────────────
 
 const httpServer = createServer(app);
@@ -41,7 +37,14 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
 
 // ─── Socket handlers ──────────────────────────────────────────────────────────
 
-registerHandlers(io);
+const roomManager = registerHandlers(io);
+
+// ─── Health (open CORS so any client deployment can ping) ─────────────────────
+
+app.get('/health', (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.json({ status: 'ok', ts: Date.now(), players: roomManager.getTotalPlayerCount() });
+});
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 

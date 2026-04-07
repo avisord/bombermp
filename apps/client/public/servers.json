@@ -1,0 +1,12 @@
+[
+  {
+    "slug": "asia-south1",
+    "name": "Asia South",
+    "url": "https://bombermpapi.avinashjha.space"
+  },
+  {
+    "slug": "local",
+    "name": "Local",
+    "url": "http://localhost:3001"
+  }
+]

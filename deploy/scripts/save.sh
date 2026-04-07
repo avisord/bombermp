@@ -38,6 +38,5 @@ save_image() {
 }
 
 save_image server
-save_image client
 
 echo "[save] Done."
