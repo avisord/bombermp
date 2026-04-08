@@ -73,6 +73,44 @@ if (!ctx) throw new Error('Failed to get 2D rendering context');
 canvas.width  = GRID_COLS * TILE_SIZE;
 canvas.height = GRID_ROWS * TILE_SIZE;
 
+// ─── Viewport-fit scaling ────────────────────────────────────────────────────
+// Scale game-wrapper and ui-root so they always fit within the viewport
+// without scrollbars. Uses CSS transform: scale() for a fluid layout.
+
+const HUD_HEIGHT = 54; // approx HUD bar height in px
+const GAME_NATURAL_W = canvas.width + 4;  // +border
+const GAME_NATURAL_H = canvas.height + HUD_HEIGHT + 4;
+
+function fitToViewport(): void {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  // Scale game wrapper
+  const gameScaleX = vw / GAME_NATURAL_W;
+  const gameScaleY = vh / GAME_NATURAL_H;
+  const gameScale = Math.min(gameScaleX, gameScaleY, 1); // never scale up
+  gameWrapper.style.transformOrigin = 'center center';
+  gameWrapper.style.transform = gameScale < 1 ? `scale(${gameScale})` : '';
+
+  // Scale lobby UI — measure its natural size then scale to fit
+  if (uiRoot.style.display !== 'none' && uiRoot.children.length > 0) {
+    // Reset scale to measure natural size
+    uiRoot.style.transform = '';
+    const rect = uiRoot.getBoundingClientRect();
+    const uiScaleX = vw / rect.width;
+    const uiScaleY = vh / rect.height;
+    const uiScale = Math.min(uiScaleX, uiScaleY, 1);
+    uiRoot.style.transformOrigin = 'top center';
+    uiRoot.style.transform = uiScale < 1 ? `scale(${uiScale})` : '';
+  }
+}
+
+window.addEventListener('resize', fitToViewport);
+
+// Re-run fit whenever ui-root content changes (lobby/waiting room transitions)
+const uiObserver = new MutationObserver(() => requestAnimationFrame(fitToViewport));
+uiObserver.observe(uiRoot, { childList: true });
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const isTestMode  = window.location.pathname === '/test-game';
@@ -129,10 +167,12 @@ function showGameView(): void {
   gameWrapper.style.display = 'flex';
   hideUI(uiRoot);
   showHUD();
+  requestAnimationFrame(fitToViewport);
 }
 
 function hideGameView(): void {
   gameWrapper.style.display = 'none';
+  gameWrapper.style.transform = '';
   hideHUD();
 }
 
