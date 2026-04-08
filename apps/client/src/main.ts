@@ -84,24 +84,43 @@ const GAME_NATURAL_H = canvas.height + HUD_HEIGHT + 4;
 function fitToViewport(): void {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
+  const body = document.body;
 
   // Scale game wrapper
   const gameScaleX = vw / GAME_NATURAL_W;
   const gameScaleY = vh / GAME_NATURAL_H;
-  const gameScale = Math.min(gameScaleX, gameScaleY, 1); // never scale up
-  gameWrapper.style.transformOrigin = 'center center';
-  gameWrapper.style.transform = gameScale < 1 ? `scale(${gameScale})` : '';
+  const gameScale = Math.min(gameScaleX, gameScaleY, 1);
+  if (gameScale < 1) {
+    gameWrapper.style.transformOrigin = 'top center';
+    gameWrapper.style.transform = `scale(${gameScale})`;
+  } else {
+    gameWrapper.style.transform = '';
+  }
 
   // Scale lobby UI — measure its natural size then scale to fit
   if (uiRoot.style.display !== 'none' && uiRoot.children.length > 0) {
     // Reset scale to measure natural size
     uiRoot.style.transform = '';
+    uiRoot.style.transformOrigin = '';
     const rect = uiRoot.getBoundingClientRect();
     const uiScaleX = vw / rect.width;
     const uiScaleY = vh / rect.height;
     const uiScale = Math.min(uiScaleX, uiScaleY, 1);
-    uiRoot.style.transformOrigin = 'top center';
-    uiRoot.style.transform = uiScale < 1 ? `scale(${uiScale})` : '';
+    if (uiScale < 1) {
+      uiRoot.style.transformOrigin = 'top center';
+      uiRoot.style.transform = `scale(${uiScale})`;
+      // Align to top so scaled content isn't clipped
+      body.style.alignItems = 'flex-start';
+      body.style.justifyContent = 'center';
+    } else {
+      body.style.alignItems = 'center';
+      body.style.justifyContent = 'center';
+    }
+  }
+
+  // Same for game wrapper visibility
+  if (gameWrapper.style.display === 'flex') {
+    body.style.alignItems = gameScale < 1 ? 'flex-start' : 'center';
   }
 }
 
