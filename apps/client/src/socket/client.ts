@@ -52,6 +52,10 @@ export function connectToServer(url: string): AppSocket {
     withCredentials: true,
     transports: ['websocket', 'polling'],
     auth: { playerId: getOrCreatePlayerId() },
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
   });
   return activeSocket;
 }

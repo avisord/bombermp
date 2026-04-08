@@ -1,0 +1,13 @@
+i am deploying this game on crazy games, and they have these set of requirements: 
+
+Initial download size <50MB: https://docs.crazygames.com//requirements/technical/#file-size-count-limits,
+Gameplay requirements:  https://docs.crazygames.com/requirements/gameplay/#basic-gameplay-requirements, 
+No external ads: https://docs.crazygames.com/requirements/ads/,
+No external login options: https://docs.crazygames.com/requirements/account-integration/, 
+Multiplayer requirements: https://docs.crazygames.com/requirements/multiplayer/, 
+Reload without Instant Multiplayer, 
+
+
+we need to support all these changes 
+
+make these changes in the game in a saperate branch

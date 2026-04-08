@@ -45,6 +45,18 @@ import {
   updateHUDStats,
   updateHUDLatency,
 } from './ui/hud.js';
+import {
+  initCrazySDK,
+  isCrazyGamesEnv,
+  gameplayStart,
+  gameplayStop,
+  gameLoadingStart,
+  gameLoadingStop,
+  requestMidgameAd,
+  getInviteRoomId,
+  getCrazyUser,
+  addAuthListener,
+} from './crazygames/sdk.js';
 
 // ─── DOM setup ────────────────────────────────────────────────────────────────
 
@@ -77,6 +89,7 @@ let lastRoomState: RoomState | null = null;
 let socket: AppSocket | null = null;
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
 let currentServerName: string | null = null;
+let crazyGamesUsername: string | null = null;
 
 // ─── Appearance & direction ────────────────────────────────────────────────────
 let myAppearance: PlayerAppearance = loadAppearance();
@@ -224,6 +237,7 @@ function registerSocketHandlers(sock: AppSocket): void {
           showGameView();
           input.attach(document);
           startRenderLoop();
+          gameplayStart();
         } else {
           stopRenderLoop();
           hideGameView();
@@ -301,11 +315,14 @@ function registerSocketHandlers(sock: AppSocket): void {
   sock.on('game:over', ({ winnerId }) => {
     input.detach(document);
     predictor.reset();
+    gameplayStop();
 
     const players = { ...gameState.state?.players };
     setTimeout(() => {
       stopRenderLoop();
       showGameOver(uiRoot, winnerId, players);
+      // Show a midgame ad between rounds (CrazyGames requirement)
+      void requestMidgameAd();
     }, EXPLOSION_DURATION_MS + 100);
   });
 
@@ -338,8 +355,23 @@ function registerSocketHandlers(sock: AppSocket): void {
     stopRenderLoop();
     input.detach(document);
     hideGameView();
+    gameplayStop();
+
     if (isTestMode) {
       uiRoot.innerHTML = '<p style="color:#64748B;font-family:sans-serif;text-align:center;padding:2rem">Disconnected. Reconnecting\u2026</p>';
+      return;
+    }
+
+    // Auto-reconnect: if we have a room hash and stored name, try to rejoin
+    const roomId = getRoomIdFromHash();
+    const storedName = getStoredDisplayName();
+    if (roomId && storedName && reason !== 'io client disconnect') {
+      showUI(uiRoot);
+      uiRoot.innerHTML = '<p style="color:#64748B;font-family:var(--font-body);text-align:center;padding:2rem">Reconnecting\u2026</p>';
+      // Socket.io will auto-reconnect; once connected, rejoin the room
+      sock.once('connect', () => {
+        sock.emit('room:join', { roomId, displayName: storedName });
+      });
     } else {
       showLobby(uiRoot, makeLobbyOptions());
     }
@@ -468,8 +500,37 @@ function showServerSelectScreen(): void {
 
 initHUD(gameWrapper);
 void loadSprites();
+gameLoadingStart();
 
 async function boot(): Promise<void> {
+  // Initialise CrazyGames SDK
+  await initCrazySDK();
+
+  // If on CrazyGames, try to get the user's CG username
+  if (isCrazyGamesEnv()) {
+    const cgUser = await getCrazyUser();
+    if (cgUser?.username) {
+      crazyGamesUsername = cgUser.username;
+      // Use CG username as display name so friends recognise each other
+      setStoredDisplayName(cgUser.username);
+    }
+    // Listen for auth changes (guest → logged in)
+    addAuthListener((user) => {
+      if (user?.username) {
+        crazyGamesUsername = user.username;
+        setStoredDisplayName(user.username);
+      }
+    });
+  }
+
+  // Check if player arrived via CrazyGames invite link
+  const inviteRoomId = getInviteRoomId();
+  if (inviteRoomId) {
+    setRoomHash(inviteRoomId);
+  }
+
+  gameLoadingStop();
+
   const servers = await fetchServerList();
   const slugFromUrl = getServerSlugFromUrl();
 

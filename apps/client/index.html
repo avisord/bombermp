@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BomberMP</title>
 
+    <!-- CrazyGames SDK -->
+    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
+
     <!-- Playful Geometric fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -36,6 +39,18 @@
         box-sizing: border-box;
         margin: 0;
         padding: 0;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+
+      /* Re-enable selection for inputs */
+      input, textarea {
+        -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
+        user-select: text;
       }
 
       body {

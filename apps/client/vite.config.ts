@@ -2,7 +2,7 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/bombermp/' : '/',
+  base: process.env.GITHUB_ACTIONS ? '/bombermp/' : process.env.CRAZYGAMES ? './' : '/',
   resolve: {
     alias: {
       '@bombermp/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),

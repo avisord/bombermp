@@ -5,6 +5,7 @@ import { drawPlayerPreview } from '../game/renderer.js';
 import { iconPath } from '../assets/registry.js';
 import { fetchServerList, pingAllServers } from '../socket/servers.js';
 import type { ServerInfo, ServerStatus } from '../socket/servers.js';
+import { isCrazyGamesEnv, showInvitePopup } from '../crazygames/sdk.js';
 
 // ─── Design constants ─────────────────────────────────────────────────────────
 
@@ -618,6 +619,7 @@ export function showWaitingRoom(
           <div class="bmp-room-id-wrap">
             <span class="bmp-room-id">${escHtml(state.roomId)}</span>
             <button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="copy-btn">Copy ID</button>
+            <button class="bmp-btn bmp-btn--ghost bmp-btn--xs" id="invite-btn">Invite</button>
           </div>
         `,
         style: 'width:100%',
@@ -647,6 +649,21 @@ export function showWaitingRoom(
         btn.textContent = 'Copied!';
         setTimeout(() => { btn.textContent = 'Copy ID'; }, 1500);
       });
+    });
+
+    root.querySelector<HTMLButtonElement>('#invite-btn')!.addEventListener('click', () => {
+      if (isCrazyGamesEnv()) {
+        // Use CrazyGames invite popup (friends feature)
+        showInvitePopup(state.roomId);
+      } else {
+        // Fallback: copy the share link to clipboard
+        const shareUrl = `${window.location.origin}${window.location.pathname}?server=${encodeURIComponent(new URLSearchParams(window.location.search).get('server') ?? '')}#r${state.roomId}`;
+        const btn = root.querySelector<HTMLButtonElement>('#invite-btn')!;
+        void navigator.clipboard.writeText(shareUrl).then(() => {
+          btn.textContent = 'Link Copied!';
+          setTimeout(() => { btn.textContent = 'Invite'; }, 1500);
+        });
+      }
     });
 
     root.querySelector('#leave-btn')!.addEventListener('click', onLeave);
