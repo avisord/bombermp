@@ -189,4 +189,5 @@ export interface SocketData {
   playerId: string;
   displayName: string;
   roomId: string | null;
+  clientVersion: string;
 }

@@ -10,6 +10,7 @@ import type {
   ServerToClientEvents,
   SocketData,
 } from '@bombermp/shared';
+import { GAME_VERSION } from '@bombermp/shared';
 import { connectDB, disconnectDB } from './db/connection.js';
 import { registerHandlers } from './sockets/handlers.js';
 
@@ -43,7 +44,12 @@ const roomManager = registerHandlers(io);
 
 app.get('/health', (_req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.json({ status: 'ok', ts: Date.now(), players: roomManager.getTotalPlayerCount() });
+  res.json({
+    status: 'ok',
+    ts: Date.now(),
+    version: GAME_VERSION,
+    players: roomManager.getTotalPlayerCount(),
+  });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
@@ -56,7 +62,7 @@ async function start(): Promise<void> {
   }
 
   httpServer.listen(PORT, () => {
-    console.log(`[server] listening on http://localhost:${PORT}`);
+    console.log(`[server] listening on http://localhost:${PORT} (version ${GAME_VERSION})`);
   });
 }
 

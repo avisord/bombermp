@@ -1,6 +1,6 @@
 {
   "name": "bombermp",
-  "version": "0.0.1",
+  "version": "1.0.1",
   "private": true,
   "packageManager": "pnpm@10.28.2",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "pnpm --filter @bombermp/shared build && pnpm --filter @bombermp/server build && pnpm --filter @bombermp/client build",
     "typecheck": "pnpm --filter @bombermp/shared typecheck && pnpm --filter @bombermp/server typecheck && pnpm --filter @bombermp/client typecheck",
     "lint": "eslint . --ext .ts,.tsx",
-    "test": "echo \"No tests yet\""
+    "test": "echo \"No tests yet\"",
+    "version:bump": "node scripts/bump-version.mjs"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

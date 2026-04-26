@@ -1,0 +1,23 @@
+feat: ability to register own server in server selection menu
+it will be added in local stroage of that perticular user's browser
+
+do changes in this branch: feat/register-own-server
+
+but for that we need to validate that server have valid version of api
+and also we need to versoning in the system
+
+so implementation of that will also be needed
+lets keep the version in semver format:
+major.minor.patch
+
+we will have a utility to update the version of game and api should also expose the version of game
+client build will also have a copy of version in it
+
+client will validate the version of api while connecting to the server
+
+older will not connect to newer version of server (only for major version)
+newer client will not connect to older version of server (only for major version)
+
+giving the client: "version not supported" message
+
+
