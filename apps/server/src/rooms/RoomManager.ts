@@ -10,6 +10,7 @@ import type { ClientToServerEvents, ServerToClientEvents, InterServerEvents, Soc
 import { GameEngine } from '../game/GameEngine.js';
 import type { PlayerSlot } from '../game/GameEngine.js';
 import { GameSessionModel } from '../db/models/GameSession.js';
+import { isDbEnabled } from '../db/connection.js';
 import { BotController } from '../bots/BotController.js';
 import { pickBotName } from '../bots/botNames.js';
 import type { Server } from 'socket.io';
@@ -226,18 +227,20 @@ export class RoomManager {
       );
     }
 
-    // Persist session (fire-and-forget)
-    GameSessionModel.create({
-      roomId: room.roomId,
-      startedAt: new Date(),
-      endedAt: null,
-      winnerId: null,
-      playerIds: humanSlots.map((s) => s.playerId),
-    }).then((session) => {
-      room.sessionId = String(session._id);
-    }).catch((err: unknown) => {
-      console.error('[db] failed to create game session', err);
-    });
+    // Persist session (fire-and-forget; only when MongoDB is enabled)
+    if (isDbEnabled()) {
+      GameSessionModel.create({
+        roomId: room.roomId,
+        startedAt: new Date(),
+        endedAt: null,
+        winnerId: null,
+        playerIds: humanSlots.map((s) => s.playerId),
+      }).then((session) => {
+        room.sessionId = String(session._id);
+      }).catch((err: unknown) => {
+        console.error('[db] failed to create game session', err);
+      });
+    }
 
     this.io.to(room.roomId).emit('room:state', this.toRoomState(room));
     room.engine.start();
@@ -247,8 +250,8 @@ export class RoomManager {
     room.status = RoomStatus.GAME_OVER;
     this.io.to(room.roomId).emit('game:over', { winnerId });
 
-    // Update DB session (fire-and-forget)
-    if (room.sessionId) {
+    // Update DB session (fire-and-forget; only when MongoDB is enabled)
+    if (isDbEnabled() && room.sessionId) {
       GameSessionModel.findByIdAndUpdate(room.sessionId, {
         endedAt: new Date(),
         winnerId,

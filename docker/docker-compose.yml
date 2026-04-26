@@ -1,7 +1,12 @@
 services:
 
+  # ─── Optional persistence ──────────────────────────────────────────────────
+  # Mongo only starts when you opt in:
+  #   docker compose --profile persistence up
+  # Without the profile, the server runs in-memory (gameplay only).
   mongodb:
     image: mongo:7
+    profiles: ["persistence"]
     restart: unless-stopped
     ports:
       - "27017:27017"
@@ -22,13 +27,14 @@ services:
       - "3001:3001"
     environment:
       PORT: "3001"
-      MONGODB_URI: mongodb://mongodb:27017/bombermp
+      # MONGODB_URI is optional. Pass it at compose-up time to enable
+      # persistence, e.g.:
+      #   MONGODB_URI=mongodb://mongodb:27017/bombermp \
+      #     docker compose --profile persistence up
+      MONGODB_URI: "${MONGODB_URI:-}"
       CLIENT_ORIGIN: http://localhost
       COOKIE_SECRET: change-me-in-production
       NODE_ENV: production
-    depends_on:
-      mongodb:
-        condition: service_healthy
 
   client:
     build:

@@ -9,6 +9,7 @@ import type {
 import { GAME_VERSION, isMajorCompatible, describeVersionMismatch } from '@bombermp/shared';
 import { RoomManager } from '../rooms/RoomManager.js';
 import { PlayerModel } from '../db/models/Player.js';
+import { isDbEnabled } from '../db/connection.js';
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -150,6 +151,7 @@ function errMsg(err: unknown, fallback: string): string {
 }
 
 function upsertPlayer(playerId: string, displayName: string): void {
+  if (!isDbEnabled()) return;
   PlayerModel.findByIdAndUpdate(
     playerId,
     { $set: { displayName, lastSeen: new Date() } },
