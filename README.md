@@ -18,7 +18,7 @@ local.
 ### One-liner (Docker)
 
 ```bash
-docker run -d --name bombermp -p 3001:3001 avinashjha/bombermp-server:latest
+docker run -d --name bombermp -p 3001:3001 avisord/bombermp-server:latest
 ```
 
 That's it. The server is now listening on port `3001`. Open
@@ -56,7 +56,7 @@ persistence, set `MONGODB_URI` and the server will start using it:
 docker run -d --name bombermp \
   -p 3001:3001 \
   -e MONGODB_URI="mongodb://your-mongo-host:27017/bombermp" \
-  avinashjha/bombermp-server:latest
+  avisord/bombermp-server:latest
 ```
 
 ### Full local stack with `docker compose`
