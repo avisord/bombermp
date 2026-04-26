@@ -1,9 +1,11 @@
 {
   "name": "@bombermp/server",
-  "version": "0.0.1",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc --build",

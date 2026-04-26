@@ -6,6 +6,7 @@ import type {
   InterServerEvents,
   SocketData,
 } from '@bombermp/shared';
+import { GAME_VERSION, isMajorCompatible, describeVersionMismatch } from '@bombermp/shared';
 import { RoomManager } from '../rooms/RoomManager.js';
 import { PlayerModel } from '../db/models/Player.js';
 
@@ -16,6 +17,17 @@ export function registerHandlers(io: IoServer): RoomManager {
   const roomManager = new RoomManager(io);
 
   io.on('connection', (socket: IoSocket) => {
+    // ── Validate client version (major must match) ────────────────────────────
+    const rawVersion = socket.handshake.auth['clientVersion'] as unknown;
+    const clientVersion = typeof rawVersion === 'string' ? rawVersion : '0.0.0';
+    if (!isMajorCompatible(clientVersion, GAME_VERSION)) {
+      const message = describeVersionMismatch(clientVersion, GAME_VERSION);
+      console.warn(`[socket] rejecting ${socket.id}: ${message}`);
+      socket.emit('error', { message });
+      socket.disconnect(true);
+      return;
+    }
+
     // ── Validate player identity ──────────────────────────────────────────────
     const rawId = socket.handshake.auth['playerId'] as unknown;
     const playerId = typeof rawId === 'string' && validateUUID(rawId) ? rawId : null;
@@ -29,8 +41,9 @@ export function registerHandlers(io: IoServer): RoomManager {
     socket.data.playerId = playerId;
     socket.data.roomId = null;
     socket.data.displayName = '';
+    socket.data.clientVersion = clientVersion;
 
-    console.log(`[socket] connected: ${socket.id} player=${playerId}`);
+    console.log(`[socket] connected: ${socket.id} player=${playerId} v=${clientVersion}`);
 
     // ── room:create ───────────────────────────────────────────────────────────
     socket.on('room:create', ({ displayName, isPublic }) => {

@@ -1,9 +1,16 @@
-import { Direction } from '@bombermp/shared';
+import { Direction, GAME_VERSION, isMajorCompatible } from '@bombermp/shared';
 import type { RoomState, RoomPlayer, PublicRoomInfo } from '@bombermp/shared';
 import type { PlayerAppearance } from '../game/appearance.js';
 import { drawPlayerPreview } from '../game/renderer.js';
 import { iconPath } from '../assets/registry.js';
-import { fetchServerList, pingAllServers } from '../socket/servers.js';
+import {
+  fetchServerList,
+  pingAllServers,
+  probeServer,
+  addCustomServer,
+  removeCustomServer,
+  customSlugFromUrl,
+} from '../socket/servers.js';
 import type { ServerInfo, ServerStatus } from '../socket/servers.js';
 import { isCrazyGamesEnv, showInvitePopup } from '../crazygames/sdk.js';
 
@@ -65,6 +72,7 @@ export function showServerSelect(root: HTMLElement, options: ShowServerSelectOpt
 
   let statuses: ServerStatus[] = [];
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let mode: 'list' | 'add' = 'list';
 
   function cleanup(): void {
     if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null; }
@@ -77,6 +85,70 @@ export function showServerSelect(root: HTMLElement, options: ShowServerSelectOpt
     return 'bmp-server__latency--bad';
   }
 
+  function statusSubtitle(s: ServerStatus): { text: string; className: string } {
+    if (!s.online) return { text: 'Offline', className: '' };
+    if (!s.versionCompatible) {
+      const v = s.serverVersion ?? 'unknown';
+      return { text: `Version not supported (server v${v}, you v${GAME_VERSION})`, className: 'bmp-server__sub--warn' };
+    }
+    return {
+      text: `${s.players} player${s.players !== 1 ? 's' : ''} online`,
+      className: '',
+    };
+  }
+
+  function renderRow(s: ServerStatus): string {
+    const sub = statusSubtitle(s);
+    const customBadge = s.info.isCustom ? '<span class="bmp-server__custom-tag">custom</span>' : '';
+    const removeBtn = s.info.isCustom
+      ? `<button class="bmp-server__remove" data-remove-slug="${escHtml(s.info.slug)}" title="Remove server" aria-label="Remove server">\u00d7</button>`
+      : '';
+
+    if (!s.online) {
+      return `
+        <div class="bmp-server-row-wrap">
+          <button class="bmp-play-option bmp-server-row bmp-server-row--offline" disabled>
+            <div class="bmp-play-option__text">
+              <span class="bmp-play-option__title">${escHtml(s.info.name)} ${customBadge}</span>
+              <span class="bmp-play-option__sub">Offline</span>
+            </div>
+            <span class="bmp-server__badge bmp-server__latency--offline">--</span>
+          </button>
+          ${removeBtn}
+        </div>
+      `;
+    }
+
+    if (!s.versionCompatible) {
+      return `
+        <div class="bmp-server-row-wrap">
+          <button class="bmp-play-option bmp-server-row bmp-server-row--incompatible" disabled
+            title="${escHtml(sub.text)}">
+            <div class="bmp-play-option__text">
+              <span class="bmp-play-option__title">${escHtml(s.info.name)} ${customBadge}</span>
+              <span class="bmp-play-option__sub ${sub.className}">${escHtml(sub.text)}</span>
+            </div>
+            <span class="bmp-server__badge bmp-server__badge--warn">v${escHtml(s.serverVersion ?? '?')}</span>
+          </button>
+          ${removeBtn}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="bmp-server-row-wrap">
+        <button class="bmp-play-option bmp-server-row" data-slug="${escHtml(s.info.slug)}">
+          <div class="bmp-play-option__text">
+            <span class="bmp-play-option__title">${escHtml(s.info.name)} ${customBadge}</span>
+            <span class="bmp-play-option__sub">${escHtml(sub.text)}</span>
+          </div>
+          <span class="bmp-server__badge ${latencyClass(s.latencyMs)}">${s.latencyMs}ms</span>
+        </button>
+        ${removeBtn}
+      </div>
+    `;
+  }
+
   function renderList(): void {
     const listEl = root.querySelector<HTMLDivElement>('#server-list');
     if (!listEl) return;
@@ -86,30 +158,9 @@ export function showServerSelect(root: HTMLElement, options: ShowServerSelectOpt
       return;
     }
 
-    listEl.innerHTML = statuses.map((s) => {
-      if (!s.online) {
-        return `
-          <button class="bmp-play-option bmp-server-row bmp-server-row--offline" disabled>
-            <div class="bmp-play-option__text">
-              <span class="bmp-play-option__title">${escHtml(s.info.name)}</span>
-              <span class="bmp-play-option__sub">Offline</span>
-            </div>
-            <span class="bmp-server__badge bmp-server__latency--offline">--</span>
-          </button>
-        `;
-      }
-      return `
-        <button class="bmp-play-option bmp-server-row" data-slug="${escHtml(s.info.slug)}">
-          <div class="bmp-play-option__text">
-            <span class="bmp-play-option__title">${escHtml(s.info.name)}</span>
-            <span class="bmp-play-option__sub">${s.players} player${s.players !== 1 ? 's' : ''} online</span>
-          </div>
-          <span class="bmp-server__badge ${latencyClass(s.latencyMs)}">${s.latencyMs}ms</span>
-        </button>
-      `;
-    }).join('');
+    listEl.innerHTML = statuses.map(renderRow).join('');
 
-    // Bind click handlers
+    // Connect handlers
     for (const btn of listEl.querySelectorAll<HTMLButtonElement>('.bmp-server-row[data-slug]')) {
       btn.addEventListener('click', () => {
         const slug = btn.dataset['slug']!;
@@ -120,31 +171,152 @@ export function showServerSelect(root: HTMLElement, options: ShowServerSelectOpt
         }
       });
     }
+
+    // Remove handlers
+    for (const btn of listEl.querySelectorAll<HTMLButtonElement>('[data-remove-slug]')) {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const slug = btn.dataset['removeSlug']!;
+        removeCustomServer(slug);
+        statuses = statuses.filter((s) => s.info.slug !== slug);
+        renderList();
+      });
+    }
   }
 
   async function refresh(): Promise<void> {
+    if (mode !== 'list') return;
     const servers = await fetchServerList();
     statuses = await pingAllServers(servers);
-    renderList();
+    if (mode === 'list') renderList();
   }
 
-  // Initial render
-  root.innerHTML = `
-    <div class="bmp-dec bmp-dec--circle-yellow" aria-hidden="true"></div>
-    <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
+  function renderListView(): void {
+    mode = 'list';
+    root.innerHTML = `
+      <div class="bmp-dec bmp-dec--circle-yellow" aria-hidden="true"></div>
+      <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
 
-    ${logoHtml()}
+      ${logoHtml()}
+      <div class="bmp-version-pill" title="Client version">v${escHtml(GAME_VERSION)}</div>
 
-    ${cardHtml({
-      headerClass: 'bmp-card__header--violet',
-      title: 'Select Server',
-      style: 'width:100%',
-      body: '<div id="server-list"><p class="bmp-server__loading">Checking servers\u2026</p></div>',
-    })}
-  `;
+      ${cardHtml({
+        headerClass: 'bmp-card__header--violet',
+        title: 'Select Server',
+        style: 'width:100%',
+        body: `
+          <div id="server-list"><p class="bmp-server__loading">Checking servers\u2026</p></div>
+          <div class="bmp-action-row" style="justify-content:flex-start">
+            <button class="bmp-btn bmp-btn--ghost bmp-btn--sm" id="add-server-btn">+ Add Custom Server</button>
+          </div>
+        `,
+      })}
+    `;
+    renderList();
+    root.querySelector<HTMLButtonElement>('#add-server-btn')!.addEventListener('click', () => {
+      cleanup();
+      renderAddView();
+    });
 
-  void refresh();
-  pollTimer = setInterval(() => { void refresh(); }, 10_000);
+    if (pollTimer !== null) clearInterval(pollTimer);
+    pollTimer = setInterval(() => { void refresh(); }, 10_000);
+    void refresh();
+  }
+
+  function renderAddView(): void {
+    mode = 'add';
+    root.innerHTML = `
+      ${logoHtml()}
+      <div class="bmp-version-pill" title="Client version">v${escHtml(GAME_VERSION)}</div>
+
+      ${cardHtml({
+        headerClass: 'bmp-card__header--violet',
+        title: 'Add Custom Server',
+        style: 'width:100%;max-width:420px',
+        body: `
+          <div class="bmp-field">
+            <label class="bmp-label" for="add-server-name">Display name</label>
+            <input class="bmp-input" id="add-server-name" type="text"
+              placeholder="My Server" maxlength="32" autocomplete="off" />
+          </div>
+          <div class="bmp-field">
+            <label class="bmp-label" for="add-server-url">Server URL</label>
+            <input class="bmp-input bmp-input--mono" id="add-server-url" type="url"
+              placeholder="https://my-bombermp.example.com" autocomplete="off" />
+          </div>
+          <p class="bmp-error" id="add-server-error" role="alert" aria-live="polite"></p>
+          <p class="bmp-server__loading bmp-hidden" id="add-server-status">Validating server\u2026</p>
+          <div class="bmp-action-row">
+            <button class="bmp-btn bmp-btn--danger bmp-btn--sm" id="add-server-cancel">\u2190 Cancel</button>
+            <button class="bmp-btn bmp-btn--secondary" id="add-server-submit">
+              Validate &amp; Add <span class="bmp-btn__arrow">\u2192</span>
+            </button>
+          </div>
+        `,
+      })}
+    `;
+
+    const nameEl   = root.querySelector<HTMLInputElement>('#add-server-name')!;
+    const urlEl    = root.querySelector<HTMLInputElement>('#add-server-url')!;
+    const errorEl  = root.querySelector<HTMLParagraphElement>('#add-server-error')!;
+    const statusEl = root.querySelector<HTMLParagraphElement>('#add-server-status')!;
+    const submit   = root.querySelector<HTMLButtonElement>('#add-server-submit')!;
+    const cancel   = root.querySelector<HTMLButtonElement>('#add-server-cancel')!;
+
+    nameEl.focus();
+
+    function setError(msg: string): void { errorEl.textContent = msg; }
+    function setBusy(busy: boolean): void {
+      submit.disabled = busy;
+      cancel.disabled = busy;
+      statusEl.classList.toggle('bmp-hidden', !busy);
+    }
+
+    cancel.addEventListener('click', () => renderListView());
+
+    async function attemptAdd(): Promise<void> {
+      setError('');
+      const name = nameEl.value.trim();
+      const url  = urlEl.value.trim().replace(/\/$/, '');
+      if (!name) { setError('Enter a name'); nameEl.focus(); return; }
+      if (!url)  { setError('Enter a URL');  urlEl.focus();  return; }
+      try {
+        // eslint-disable-next-line no-new
+        new URL(url);
+      } catch {
+        setError('URL is not valid'); urlEl.focus(); return;
+      }
+
+      setBusy(true);
+      try {
+        const { body } = await probeServer(url);
+        if (body.status !== 'ok') throw new Error('Server did not return status=ok');
+        const serverVersion = typeof body.version === 'string' ? body.version : null;
+        if (!serverVersion) {
+          setError('Server did not report a version (legacy/unsupported)');
+          setBusy(false);
+          return;
+        }
+        if (!isMajorCompatible(GAME_VERSION, serverVersion)) {
+          setError(`Version not supported: server is v${serverVersion}, you are v${GAME_VERSION}`);
+          setBusy(false);
+          return;
+        }
+        addCustomServer({ slug: customSlugFromUrl(url), name, url });
+        renderListView();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Could not reach server';
+        setError(`Could not reach server: ${msg}`);
+        setBusy(false);
+      }
+    }
+
+    submit.addEventListener('click', () => { void attemptAdd(); });
+    nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') urlEl.focus(); });
+    urlEl.addEventListener('keydown',  (e) => { if (e.key === 'Enter') void attemptAdd(); });
+  }
+
+  renderListView();
 }
 
 // ─── HTML component helpers ───────────────────────────────────────────────────
@@ -1546,6 +1718,68 @@ function injectStyles(): void {
     .bmp-server-row--offline {
       opacity: 0.45;
       cursor: not-allowed !important;
+    }
+    .bmp-server-row--incompatible {
+      opacity: 0.7;
+      cursor: not-allowed !important;
+      border-color: #FBBF24 !important;
+    }
+    .bmp-server-row-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .bmp-server-row-wrap > .bmp-play-option { flex: 1; }
+    .bmp-server__remove {
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1.5px solid #CBD5E1;
+      background: #FFFFFF;
+      color: #94A3B8;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .bmp-server__remove:hover {
+      background: #FEE2E2;
+      border-color: #DC2626;
+      color: #DC2626;
+    }
+    .bmp-server__custom-tag {
+      display: inline-block;
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6D28D9;
+      background: #EDE9FE;
+      border-radius: 99px;
+      padding: 0.05rem 0.4rem;
+      margin-left: 0.3rem;
+      vertical-align: middle;
+    }
+    .bmp-server__sub--warn { color: #92400E !important; font-weight: 600; }
+    .bmp-server__badge--warn { background: #FEF3C7; color: #92400E; }
+
+    .bmp-version-pill {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #64748B;
+      background: #F1F5F9;
+      border: 1.5px solid #CBD5E1;
+      border-radius: 999px;
+      padding: 0.15rem 0.7rem;
+      margin-bottom: 0.5rem;
+      font-family: 'Outfit', monospace;
     }
     .bmp-server__badge {
       font-size: 0.75rem;

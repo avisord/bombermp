@@ -1,5 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from '@bombermp/shared';
+import { GAME_VERSION } from '@bombermp/shared';
 
 // ─── Player Identity ──────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ export function connectToServer(url: string): AppSocket {
     autoConnect: false,
     withCredentials: true,
     transports: ['websocket', 'polling'],
-    auth: { playerId: getOrCreatePlayerId() },
+    auth: { playerId: getOrCreatePlayerId(), clientVersion: GAME_VERSION },
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,

@@ -598,7 +598,7 @@ async function boot(): Promise<void> {
     const match = servers.find((s) => s.slug === slugFromUrl);
     if (match) {
       const status = await pingServer(match);
-      if (status.online) {
+      if (status.online && status.versionCompatible) {
         switchToServer(match);
         const hashRoomId = getRoomIdFromHash();
         const storedName = getStoredDisplayName();
