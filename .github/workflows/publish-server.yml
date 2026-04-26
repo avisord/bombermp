@@ -14,6 +14,14 @@ name: Publish Server Image to Docker Hub
 on:
   push:
     tags: ['v*']
+    paths:
+      - 'apps/server/**'
+      - 'packages/shared/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+      - '.github/workflows/publish-server.yml'
   workflow_dispatch:
 
 permissions:
