@@ -1,0 +1,126 @@
+# CI Workflows — Triggers, Path Filters, and Skip Mechanisms
+
+Date: 2026-04-27
+
+---
+
+## What Was Done
+
+Added `paths:` filters to both GitHub Actions workflows so that pushes
+which can't possibly affect a deliverable don't burn CI minutes
+re-deploying the same artifact.
+
+Workflows touched:
+
+- `.github/workflows/deploy-client.yml`
+- `.github/workflows/publish-server.yml`
+
+---
+
+## Triggers (per workflow)
+
+### `deploy-client.yml` — GitHub Pages deploy
+
+Fires on:
+
+- `push` to `main` **and** at least one of these paths changed:
+  - `apps/client/**`
+  - `packages/shared/**` (client imports types/constants from here)
+  - `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.base.json`
+  - `.github/workflows/deploy-client.yml` itself
+- `workflow_dispatch` (manual run from the Actions UI — bypasses the path filter)
+
+A README-only commit, a journal entry, a server-only change, or a
+docker-compose tweak no longer redeploys the client.
+
+### `publish-server.yml` — Docker Hub publish
+
+Fires on:
+
+- `push` of a tag matching `v*` **and** at least one of these paths changed:
+  - `apps/server/**`
+  - `packages/shared/**`
+  - `package.json` (the root — `bump-version.mjs` writes here)
+  - `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.base.json`
+  - `.github/workflows/publish-server.yml` itself
+- `workflow_dispatch` (manual run, publishes the `:edge` tag)
+
+The path filter is mostly defensive — tag pushes are already explicit
+release events. But it means an accidental tag on a docs-only commit
+won't re-publish a server image.
+
+After a successful tag publish, the workflow also POSTs to
+`RENDER_DEPLOY_HOOK` (if the secret is set) so the production Render
+service redeploys against the new `:latest` image immediately, instead
+of waiting for Render's polling interval. Forks without that secret get
+a clean no-op.
+
+---
+
+## Why path filters matter
+
+Two properties:
+
+1. **Save CI minutes.** GitHub free-tier minutes are finite. Path filters
+   are the cheapest way to keep idle workflows from firing on pushes
+   that don't matter (README edits, journal entries, docs).
+2. **Self-document the workflow's surface.** The `paths:` block is a
+   declarative answer to "what does this workflow depend on?" — easier
+   to audit than reading the build steps and inferring it.
+
+---
+
+## Manual escape hatches
+
+Two ways to skip workflows when you want to push something that *would*
+match the path filter but you know doesn't need a build:
+
+### `[skip ci]` in the commit subject
+
+GitHub Actions special-cases commit messages containing any of:
+
+```
+[skip ci]   [ci skip]   [no ci]   [skip actions]   [actions skip]
+```
+
+When the head commit of a push has one of these in its subject or body,
+**no workflows fire for that push** — even ones whose path filter would
+otherwise match. Use this for one-off intentional skips:
+
+```bash
+git commit -m "docs: tweak README wording [no ci]"
+```
+
+### Manual re-run via `workflow_dispatch`
+
+Both workflows keep `workflow_dispatch:` so you can trigger them by hand
+from the Actions UI when you want to. This is useful when you skipped CI
+on a commit but later realize you do want to ship it.
+
+---
+
+## What this does NOT do
+
+- Path filters do not affect tag-push triggers in obvious ways. For
+  `publish-server.yml`, GitHub evaluates `paths:` against the diff of
+  the *commit being tagged*. If you tag a commit that only touched
+  unrelated files, the workflow won't fire — even though tagging is
+  usually an intentional release act. In practice, `pnpm version:bump`
+  always touches files in the path filter (`packages/shared/src/version.ts`,
+  `apps/server/package.json`, root `package.json`), so real release
+  tags always run.
+- Path filters do not retroactively cancel runs that are already queued.
+  Skipping has to happen at trigger time.
+
+---
+
+## Triggering the configured pipelines today
+
+| Action                                  | What fires                          |
+|-----------------------------------------|-------------------------------------|
+| Push to `main`, only `README.md` changed| Nothing.                            |
+| Push to `main`, `apps/client/**` changed| `deploy-client.yml`.                |
+| Push to `main`, `apps/server/**` changed| Nothing (server only ships on tag). |
+| Push tag `v1.2.0` (any release commit)  | `publish-server.yml`.               |
+| Any commit with `[no ci]` in subject    | Nothing.                            |
+| Manual run from Actions UI              | The selected workflow.              |

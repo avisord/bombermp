@@ -1,0 +1,46 @@
+# Current Issues — Core Game Backlog
+
+Date: 2026-04-27
+
+The CI/CD pipeline, lobby, and infrastructure are in good shape. This
+list captures what's still rough about the *game itself* — the things
+players notice within the first few minutes of play.
+
+---
+
+## 1. Bot AI is too weak — bots sometimes die to their own bombs
+
+The bot controller exists and bots move/place bombs, but their decision
+making is poor: they frequently walk into their own blast radius and
+die without a fight. Solo and 1v3 matches feel one-sided.
+
+## 2. Visual identity is weak — textures don't convey a "game" feel
+
+The current art reads as placeholder/programmer-art rather than a
+finished game. Tiles, walls, and players need a coherent visual style
+so the world looks like a *game* and not a tech demo.
+
+## 3. No sound effects
+
+There is no audio at all — no footsteps, no bomb fuse tick, no
+explosion, no UI clicks, no music. Audio is one of the biggest
+contributors to "feel" in an arcade game.
+
+## 4. Items and power-ups lack proper artwork
+
+Pickups (bomb-up, fire-up, speed-down) currently render with minimal
+art and don't read clearly at a glance. They need distinct, readable
+icons consistent with the rest of the visual style.
+
+## 5. Invite button does not work
+
+The Invite button in the waiting room doesn't successfully bring a
+friend into the room. Need to investigate the share-link flow and the
+CrazyGames invite popup integration.
+
+## 6. CrazyGames SDK integration is incomplete
+
+The CrazyGames SDK is wired up but not yet compliant with their
+publishing standards — gameplay events, ad placement, auth, or invite
+hooks are not fully meeting their requirements. Needs an audit pass
+against the current CrazyGames developer checklist.
