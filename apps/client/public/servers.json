@@ -5,6 +5,11 @@
     "url": "https://bombermpapi.avinashjha.space"
   },
   {
+    "slug": "asia-southeast1",
+    "name": "Singapore (Asia South East)",
+    "url": "https://bombermp-server.onrender.com"
+  },
+  {
     "slug": "local",
     "name": "Local",
     "url": "http://localhost:3001"
