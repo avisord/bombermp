@@ -244,6 +244,17 @@ export function showServerSelect(root: HTMLElement, options: ShowServerSelectOpt
             <input class="bmp-input bmp-input--mono" id="add-server-url" type="url"
               placeholder="https://my-bombermp.example.com" autocomplete="off" />
           </div>
+          <div class="bmp-info-note">
+            <span class="bmp-info-note__icon" aria-hidden="true">\u2139\ufe0f</span>
+            <div class="bmp-info-note__body">
+              <strong>Playing with friends?</strong>
+              <ul class="bmp-info-note__list">
+                <li>This server is saved only on <em>your</em> browser.</li>
+                <li>Each friend must add the same URL on their device to play together.</li>
+                <li>The URL must be reachable from their network &mdash; <code>localhost</code> and LAN-only IPs won't work over the internet.</li>
+              </ul>
+            </div>
+          </div>
           <p class="bmp-error" id="add-server-error" role="alert" aria-live="polite"></p>
           <p class="bmp-server__loading bmp-hidden" id="add-server-status">Validating server\u2026</p>
           <div class="bmp-action-row">
@@ -1780,6 +1791,34 @@ function injectStyles(): void {
       padding: 0.15rem 0.7rem;
       margin-bottom: 0.5rem;
       font-family: 'Outfit', monospace;
+    }
+
+    /* ── Info note (used in Add Custom Server form) ────────────────── */
+    .bmp-info-note {
+      display: flex;
+      gap: 0.55rem;
+      align-items: flex-start;
+      padding: 0.65rem 0.8rem;
+      background: #EFF6FF;
+      border: 1.5px solid #BFDBFE;
+      border-radius: 10px;
+    }
+    .bmp-info-note__icon { font-size: 1rem; line-height: 1.2; flex-shrink: 0; }
+    .bmp-info-note__body { font-size: 0.78rem; color: #1E3A8A; line-height: 1.4; }
+    .bmp-info-note__body strong { display: block; margin-bottom: 0.25rem; color: #1E3A8A; }
+    .bmp-info-note__list {
+      margin: 0;
+      padding-left: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .bmp-info-note__list code {
+      background: #DBEAFE;
+      border-radius: 4px;
+      padding: 0 0.25rem;
+      font-family: 'Outfit', monospace;
+      font-size: 0.75rem;
     }
     .bmp-server__badge {
       font-size: 0.75rem;
