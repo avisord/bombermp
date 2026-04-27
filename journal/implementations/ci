@@ -49,6 +49,12 @@ The path filter is mostly defensive — tag pushes are already explicit
 release events. But it means an accidental tag on a docs-only commit
 won't re-publish a server image.
 
+After a successful tag publish, the workflow also POSTs to
+`RENDER_DEPLOY_HOOK` (if the secret is set) so the production Render
+service redeploys against the new `:latest` image immediately, instead
+of waiting for Render's polling interval. Forks without that secret get
+a clean no-op.
+
 ---
 
 ## Why path filters matter

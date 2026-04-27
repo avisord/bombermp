@@ -8,6 +8,12 @@ name: Publish Server Image to Docker Hub
 #   DOCKERHUB_USERNAME — your Docker Hub username
 #   DOCKERHUB_TOKEN    — Docker Hub access token (Read & Write scope)
 #
+# Optional repo secrets:
+#   RENDER_DEPLOY_HOOK — Render deploy-hook URL; if set, called after a
+#                        successful tag publish so Render redeploys the
+#                        new image immediately instead of waiting for
+#                        its own polling interval.
+#
 # Optional repo variable:
 #   DOCKERHUB_IMAGE    — override the image name (defaults to "<username>/bombermp-server")
 
@@ -81,3 +87,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Trigger an immediate Render redeploy. Only fires for real tag
+      # pushes (not workflow_dispatch's :edge build) and only if the
+      # secret is set, so forks without a Render deployment are no-ops.
+      - name: Trigger Render redeploy
+        if: startsWith(github.ref, 'refs/tags/v') && env.HOOK != ''
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: curl -fsS -X POST "$HOOK" | head -200
