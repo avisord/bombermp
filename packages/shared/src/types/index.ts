@@ -157,6 +157,58 @@ export interface C2SPlayerInput {
   action: 'bomb' | null;
 }
 
+// ─── Bot Debug ────────────────────────────────────────────────────────────────
+// Local-only diagnostics for /test-game?debugging=bot. Server gates emission
+// behind NODE_ENV !== 'production' AND BOT_DEBUG=1.
+
+export type BotDebugMode = 'EXPLORE' | 'BATTLE';
+export type BotDebugBombPhase = 'move-to-bomb' | 'place-and-flee';
+
+export interface BotDebugBombPlan {
+  bombPos: Position;
+  hidePos: Position;
+  phase: BotDebugBombPhase;
+}
+
+export interface BotDebugEnemy {
+  id: string;
+  tile: Position;
+  distance: number;
+}
+
+export interface BotDebugSnapshot {
+  botId: string;
+  displayName: string;
+  alive: boolean;
+  mode: BotDebugMode;
+  myTile: Position;
+  tickCounter: number;
+  lastBombTick: number;
+  /** Ticks remaining before bomb cooldown clears (0 = ready). */
+  bombCooldownTicksLeft: number;
+  visitedCellCount: number;
+  inDanger: boolean;
+  /** Tile the bot will step toward this tick (next path waypoint). */
+  nextStepTile: Position | null;
+  currentPath: Position[] | null;
+  fleeTarget: Position | null;
+  bombPlan: BotDebugBombPlan | null;
+  /** Nearest enemy currently being tracked (BATTLE mode focus). */
+  targetEnemy: BotDebugEnemy | null;
+  enemiesNearby: BotDebugEnemy[];
+  lastDecision: { dir: Direction | null; action: 'bomb' | null };
+}
+
+export interface BotDebugFrame {
+  tick: number;
+  serverTime: number;
+  /** Wall-clock speed multiplier the engine is currently running at. */
+  speed: number;
+  /** Flat tile indices that are currently dangerous. */
+  dangerMap: number[];
+  bots: BotDebugSnapshot[];
+}
+
 // ─── Socket Event Maps (for Socket.io generics) ────────────────────────────────
 
 /** Client → Server events */
@@ -169,6 +221,10 @@ export interface ClientToServerEvents {
   'room:configure': (payload: C2SRoomConfigure) => void;
   'player:input': (payload: C2SPlayerInput) => void;
   'latency:ping': (payload: { clientTime: number }) => void;
+  'bot:debug:subscribe': () => void;
+  'bot:debug:unsubscribe': () => void;
+  'bot:debug:set-speed': (payload: { speed: number }) => void;
+  'bot:debug:step': () => void;
 }
 
 /** Server → Client events */
@@ -178,6 +234,7 @@ export interface ServerToClientEvents {
   'game:tick': (diff: GameStateDiff) => void;
   'game:over': (payload: { winnerId: string | null }) => void;
   'latency:pong': (payload: { clientTime: number; serverTime: number }) => void;
+  'bot:debug': (frame: BotDebugFrame) => void;
   error: (payload: { message: string }) => void;
 }
 

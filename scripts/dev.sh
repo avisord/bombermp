@@ -28,6 +28,10 @@ trap teardown EXIT INT TERM
 
 # ─── Dev servers ─────────────────────────────────────────────────────────────
 
-echo "[dev] Starting pnpm dev…"
+# Enable bot AI debug stream for /test-game?debugging=bot.
+# Server gate is NODE_ENV !== 'production' AND BOT_DEBUG=1.
+export BOT_DEBUG=1
+
+echo "[dev] Starting pnpm dev (BOT_DEBUG=1)…"
 cd "$(dirname "$0")/.."
 pnpm dev

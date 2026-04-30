@@ -23,6 +23,13 @@ import { showCustomize } from './ui/customize.js';
 import { ClientGameState } from './game/state.js';
 import { InputHandler } from './game/input.js';
 import { render, clearExplosionTimestamps } from './game/renderer.js';
+import {
+  isBotDebugRequested,
+  mountBotDebugPanel,
+  setLatestBotDebug,
+  clearBotDebug,
+  renderBotDebugOverlay,
+} from './game/debug-bot.js';
 import { LocalPlayerPredictor } from './game/prediction.js';
 import type { OtherPlayerPos } from './game/prediction.js';
 import { RemotePlayerInterpolator } from './game/interpolation.js';
@@ -132,7 +139,8 @@ uiObserver.observe(uiRoot, { childList: true });
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-const isTestMode  = window.location.pathname === '/test-game';
+const isTestMode      = window.location.pathname === '/test-game';
+const isBotDebugMode  = isTestMode && isBotDebugRequested();
 const myPlayerId  = getOrCreatePlayerId();
 const gameState   = new ClientGameState();
 const input       = new InputHandler();
@@ -203,14 +211,14 @@ function startRenderLoop(): void {
     const state = gameState.state;
     if (state) {
       const me = state.players[myPlayerId];
-      if (me) {
+      if (me && !isBotDebugMode) {
         const others: OtherPlayerPos[] = [];
         for (const [id, p] of Object.entries(state.players)) {
           if (id !== myPlayerId) others.push(p);
         }
         predictor.advance(input.currentDir, me.speedMultiplier, state.grid, nowMs, others);
       }
-      const predicted = predictor.isActive ? { x: predictor.x, y: predictor.y } : null;
+      const predicted = !isBotDebugMode && predictor.isActive ? { x: predictor.x, y: predictor.y } : null;
 
       // Build interpolated positions for remote players
       const interpPositions = new Map<string, { x: number; y: number }>();
@@ -221,6 +229,7 @@ function startRenderLoop(): void {
       }
 
       render(ctx!, state, myPlayerId, playerSlotMap, predicted, playerDirections, myAppearance, interpPositions);
+      if (isBotDebugMode) renderBotDebugOverlay(ctx!);
     }
     rafId = requestAnimationFrame(frame);
   }
@@ -250,6 +259,7 @@ function registerSocketHandlers(sock: AppSocket): void {
     lastRoomState = state;
     buildSlotMap(state);
     setRoomHash(state.roomId);
+    if (isBotDebugMode) sock.emit('bot:debug:subscribe');
 
     switch (state.status) {
       case RoomStatus.WAITING:
@@ -375,6 +385,7 @@ function registerSocketHandlers(sock: AppSocket): void {
     input.detach(document);
     predictor.reset();
     gameplayStop();
+    if (isBotDebugMode) clearBotDebug();
 
     const players = { ...gameState.state?.players };
     setTimeout(() => {
@@ -407,6 +418,12 @@ function registerSocketHandlers(sock: AppSocket): void {
   sock.on('connect', () => {
     console.log('[socket] connected:', sock.id);
     sock.emit('room:list');
+    if (isBotDebugMode) sock.emit('bot:debug:subscribe');
+  });
+
+  sock.on('bot:debug', (frame) => {
+    if (!isBotDebugMode) return;
+    setLatestBotDebug(frame);
   });
 
   sock.on('disconnect', (reason) => {
@@ -560,6 +577,12 @@ function showServerSelectScreen(): void {
 initHUD(gameWrapper);
 void loadSprites();
 gameLoadingStart();
+if (isBotDebugMode) {
+  mountBotDebugPanel({
+    onSetSpeed: (speed) => { socket?.emit('bot:debug:set-speed', { speed }); },
+    onStep: () => { socket?.emit('bot:debug:step'); },
+  });
+}
 
 async function boot(): Promise<void> {
   // Initialise CrazyGames SDK

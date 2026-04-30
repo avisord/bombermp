@@ -112,8 +112,11 @@ export class GameEngine {
 
   // ─── Public API ──────────────────────────────────────────────────────────────
 
+  /** Wall-clock speed multiplier. 1 = normal, 0 = paused. */
+  private speed = 1;
+
   start(): void {
-    this.intervalId = setInterval(() => { this.tick(); }, SERVER_TICK_RATE_MS);
+    this.scheduleInterval();
   }
 
   stop(): void {
@@ -121,6 +124,35 @@ export class GameEngine {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+  }
+
+  /**
+   * Set wall-clock speed multiplier. Each tick still advances simulation by
+   * SERVER_TICK_RATE_MS of game time, but the real-time interval between
+   * ticks scales by 1/speed. speed = 0 pauses the simulation.
+   */
+  setSpeed(speed: number): void {
+    if (!Number.isFinite(speed) || speed < 0) return;
+    this.speed = speed;
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    if (speed > 0) this.scheduleInterval();
+  }
+
+  getSpeed(): number {
+    return this.speed;
+  }
+
+  /** Advance the simulation by exactly one tick. Useful while paused. */
+  step(): void {
+    this.tick();
+  }
+
+  private scheduleInterval(): void {
+    const ms = Math.max(1, Math.round(SERVER_TICK_RATE_MS / this.speed));
+    this.intervalId = setInterval(() => { this.tick(); }, ms);
   }
 
   queueInput(playerId: string, dir: Direction | null, action: 'bomb' | null): void {

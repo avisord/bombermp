@@ -13,6 +13,7 @@ import { GameSessionModel } from '../db/models/GameSession.js';
 import { isDbEnabled } from '../db/connection.js';
 import { BotController } from '../bots/BotController.js';
 import { pickBotName } from '../bots/botNames.js';
+import { isBotDebugEnabled, botDebugRoom } from '../bots/debug.js';
 import type { Server } from 'socket.io';
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -167,6 +168,18 @@ export class RoomManager {
     room.engine.queueInput(playerId, dir, action);
   }
 
+  setEngineSpeed(roomId: string, speed: number): void {
+    const room = this.rooms.get(roomId);
+    if (!room?.engine) return;
+    room.engine.setSpeed(speed);
+  }
+
+  stepEngine(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room?.engine) return;
+    room.engine.step();
+  }
+
   // ─── Private helpers ─────────────────────────────────────────────────────────
 
   private launchGame(room: ServerRoom): void {
@@ -221,9 +234,15 @@ export class RoomManager {
     );
 
     if (botSlots.length > 0) {
+      const debugEmitter = isBotDebugEnabled()
+        ? (frame: import('@bombermp/shared').BotDebugFrame): void => {
+            this.io.to(botDebugRoom(room.roomId)).emit('bot:debug', frame);
+          }
+        : undefined;
       botController = new BotController(
         botSlots.map((s) => s.playerId),
         room.engine,
+        debugEmitter,
       );
     }
 

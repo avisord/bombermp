@@ -1,6 +1,8 @@
 import {
   Direction,
   TileType,
+  type BotDebugEnemy,
+  type BotDebugSnapshot,
   type GameState,
   type Player,
   type Position,
@@ -58,12 +60,19 @@ export class BotAI {
   private lastBombTick = -999;
   private fleeTarget: Position | null = null;
   private bombPlan: BombPlan | null = null;
+  private lastDecision: BotDecision = { dir: null, action: null };
 
   constructor(playerId: string) {
     this.playerId = playerId;
   }
 
   decide(state: GameState, dangerMap: Set<number>): BotDecision {
+    const decision = this.decideInner(state, dangerMap);
+    this.lastDecision = decision;
+    return decision;
+  }
+
+  private decideInner(state: GameState, dangerMap: Set<number>): BotDecision {
     const me = state.players[this.playerId];
     if (!me?.alive) return { dir: null, action: null };
 
@@ -657,5 +666,55 @@ export class BotAI {
       if (tile === TileType.EMPTY || tile === TileType.ITEM) return dir;
     }
     return null;
+  }
+
+  // ─── Debug snapshot ──────────────────────────────────────────────────────────
+
+  getDebugSnapshot(state: GameState, dangerMap: Set<number>): BotDebugSnapshot {
+    const me = state.players[this.playerId];
+    const myTile: Position = me
+      ? { x: Math.round(me.pixelX), y: Math.round(me.pixelY) }
+      : { x: 0, y: 0 };
+
+    const enemies = me ? this.getEnemies(state) : [];
+    const enemiesNearby: BotDebugEnemy[] = enemies
+      .map((e) => ({
+        id: e.id,
+        tile: { x: e.position.x, y: e.position.y },
+        distance: manhattanDistance(myTile, e.position),
+      }))
+      .sort((a, b) => a.distance - b.distance);
+
+    const targetEnemy = enemiesNearby[0] ?? null;
+    const cooldown = Math.max(0, BOMB_COOLDOWN_TICKS - (this.tickCounter - this.lastBombTick));
+
+    const path = this.currentPath ? this.currentPath.map((p) => ({ x: p.x, y: p.y })) : null;
+    const nextStep = path && path.length > 0 ? path[0]! : null;
+
+    return {
+      botId: this.playerId,
+      displayName: me?.displayName ?? this.playerId,
+      alive: me?.alive ?? false,
+      mode: this.mode,
+      myTile,
+      tickCounter: this.tickCounter,
+      lastBombTick: this.lastBombTick,
+      bombCooldownTicksLeft: cooldown,
+      visitedCellCount: this.visitedCells.size,
+      inDanger: dangerMap.has(toIndex(myTile.x, myTile.y)),
+      nextStepTile: nextStep,
+      currentPath: path,
+      fleeTarget: this.fleeTarget ? { ...this.fleeTarget } : null,
+      bombPlan: this.bombPlan
+        ? {
+            bombPos: { ...this.bombPlan.bombPos },
+            hidePos: { ...this.bombPlan.hidePos },
+            phase: this.bombPlan.phase,
+          }
+        : null,
+      targetEnemy,
+      enemiesNearby,
+      lastDecision: { ...this.lastDecision },
+    };
   }
 }

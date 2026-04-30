@@ -10,6 +10,7 @@ import { GAME_VERSION, isMajorCompatible, describeVersionMismatch } from '@bombe
 import { RoomManager } from '../rooms/RoomManager.js';
 import { PlayerModel } from '../db/models/Player.js';
 import { isDbEnabled } from '../db/connection.js';
+import { isBotDebugEnabled, botDebugRoom } from '../bots/debug.js';
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -131,6 +132,36 @@ export function registerHandlers(io: IoServer): RoomManager {
     // ── latency:ping ──────────────────────────────────────────────────────────
     socket.on('latency:ping', ({ clientTime }) => {
       socket.emit('latency:pong', { clientTime, serverTime: Date.now() });
+    });
+
+    // ── bot:debug:subscribe ───────────────────────────────────────────────────
+    // Local-only diagnostic stream. Silently ignored when the gate is closed.
+    socket.on('bot:debug:subscribe', () => {
+      if (!isBotDebugEnabled()) return;
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      void socket.join(botDebugRoom(roomId));
+    });
+
+    socket.on('bot:debug:unsubscribe', () => {
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      void socket.leave(botDebugRoom(roomId));
+    });
+
+    socket.on('bot:debug:set-speed', ({ speed }) => {
+      if (!isBotDebugEnabled()) return;
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      if (typeof speed !== 'number' || !Number.isFinite(speed) || speed < 0 || speed > 4) return;
+      roomManager.setEngineSpeed(roomId, speed);
+    });
+
+    socket.on('bot:debug:step', () => {
+      if (!isBotDebugEnabled()) return;
+      const roomId = socket.data.roomId;
+      if (!roomId) return;
+      roomManager.stepEngine(roomId);
     });
 
     // ── disconnect ────────────────────────────────────────────────────────────
