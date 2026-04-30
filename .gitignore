@@ -13,3 +13,6 @@ deploy/ssh-keys
 
 # ─── Build artifacts ──────────────────────────────────────────────────────────
 .tmp/
+
+# ─── Local debug logs (event-log JSONL) ───────────────────────────────────────
+logs/

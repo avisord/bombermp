@@ -11,9 +11,13 @@ import { RoomManager } from '../rooms/RoomManager.js';
 import { PlayerModel } from '../db/models/Player.js';
 import { isDbEnabled } from '../db/connection.js';
 import { isBotDebugEnabled, botDebugRoom } from '../bots/debug.js';
+import { eventLog } from '../logging/event-log.js';
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
+
+/** Per-socket last-direction tracker, used to log only on direction transitions. */
+const lastInputDir = new Map<string, string | null>();
 
 export function registerHandlers(io: IoServer): RoomManager {
   const roomManager = new RoomManager(io);
@@ -118,6 +122,24 @@ export function registerHandlers(io: IoServer): RoomManager {
       const roomId = socket.data.roomId;
       if (!roomId) return;
       roomManager.queueInput(roomId, playerId, dir, action);
+
+      // Log on dir change or any bomb action.
+      const prev = lastInputDir.get(socket.id);
+      if (prev !== dir) {
+        lastInputDir.set(socket.id, dir);
+        eventLog.logUnscoped('player.input', {
+          roomId,
+          playerId,
+          data: { kind: 'dir-change', from: prev ?? null, to: dir },
+        });
+      }
+      if (action === 'bomb') {
+        eventLog.logUnscoped('player.input', {
+          roomId,
+          playerId,
+          data: { kind: 'bomb' },
+        });
+      }
     });
 
     // ── room:leave ────────────────────────────────────────────────────────────
@@ -167,6 +189,7 @@ export function registerHandlers(io: IoServer): RoomManager {
     // ── disconnect ────────────────────────────────────────────────────────────
     socket.on('disconnect', (reason) => {
       console.log(`[socket] disconnected: ${socket.id} player=${playerId} — ${reason}`);
+      lastInputDir.delete(socket.id);
       const roomId = socket.data.roomId;
       if (roomId) roomManager.leaveRoom(roomId, playerId);
     });

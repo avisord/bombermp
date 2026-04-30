@@ -21,6 +21,7 @@ import {
   directionToward,
   tileDirection,
 } from './pathfinding.js';
+import type { ScopedLogger } from '../logging/event-log.js';
 
 type BotMode = 'EXPLORE' | 'BATTLE';
 
@@ -61,9 +62,16 @@ export class BotAI {
   private fleeTarget: Position | null = null;
   private bombPlan: BombPlan | null = null;
   private lastDecision: BotDecision = { dir: null, action: null };
+  private logger?: ScopedLogger;
+  /** Tracks whether the bot was in a flee response on the previous tick. */
+  private wasFleeing = false;
 
   constructor(playerId: string) {
     this.playerId = playerId;
+  }
+
+  setLogger(logger: ScopedLogger): void {
+    this.logger = logger;
   }
 
   decide(state: GameState, dangerMap: Set<number>): BotDecision {
@@ -82,8 +90,31 @@ export class BotAI {
 
     // --- REACT: flee if in danger (always runs, cancels bomb plan) ---
     if (dangerMap.has(toIndex(myTile.x, myTile.y))) {
+      if (!this.wasFleeing) {
+        this.logger?.log('bot.flee-start', {
+          tick: state.tick,
+          playerId: this.playerId,
+          data: { tile: myTile, hadBombPlan: this.bombPlan !== null },
+        });
+        this.wasFleeing = true;
+      }
+      if (this.bombPlan) {
+        this.logger?.log('bot.bomb-plan-abort', {
+          tick: state.tick,
+          playerId: this.playerId,
+          data: { reason: 'flee', plan: this.bombPlan },
+        });
+      }
       this.bombPlan = null;
       return this.flee(state.grid, myTile, dangerMap);
+    }
+    if (this.wasFleeing) {
+      this.logger?.log('bot.flee-end', {
+        tick: state.tick,
+        playerId: this.playerId,
+        data: { tile: myTile },
+      });
+      this.wasFleeing = false;
     }
     this.fleeTarget = null;
 
@@ -115,7 +146,7 @@ export class BotAI {
       // Validate plan is still viable
       const bombTile = getTile(state.grid, plan.bombPos.x, plan.bombPos.y);
       if (bombTile !== TileType.EMPTY && bombTile !== TileType.ITEM) {
-        this.bombPlan = null;
+        this.abortBombPlan(state.tick, 'bombPos-occupied');
         return { dir: null, action: null };
       }
 
@@ -127,17 +158,21 @@ export class BotAI {
         const hypo = this.hypotheticalDanger(dangerMap, state.grid, plan.bombPos, me.blastRadius);
         const escape = findSafeEscape(state.grid, plan.bombPos, hypo, me.blastRadius + 3);
         if (!escape) {
-          // Escape no longer viable — abort
-          this.bombPlan = null;
+          this.abortBombPlan(state.tick, 'no-escape');
           return { dir: null, action: null };
         }
         plan.hidePos = escape;
         const fleeDir = directionToward(myTile, plan.hidePos, state.grid);
         if (!fleeDir) {
-          this.bombPlan = null;
+          this.abortBombPlan(state.tick, 'no-flee-dir');
           return { dir: null, action: null };
         }
         this.lastBombTick = this.tickCounter;
+        this.logger?.log('bot.bomb-plan-arrive', {
+          tick: state.tick,
+          playerId: this.playerId,
+          data: { bombPos: plan.bombPos, hidePos: plan.hidePos },
+        });
         return { dir: fleeDir, action: 'bomb' };
       }
 
@@ -145,7 +180,7 @@ export class BotAI {
       if (!this.currentPath || this.currentPath.length === 0) {
         this.currentPath = bfsPath(state.grid, myTile, plan.bombPos, dangerMap);
         if (!this.currentPath) {
-          this.bombPlan = null;
+          this.abortBombPlan(state.tick, 'no-path');
           return { dir: null, action: null };
         }
       }
@@ -153,7 +188,7 @@ export class BotAI {
       if (this.currentPath.length > 0) {
         const next = this.currentPath[0]!;
         if (dangerMap.has(toIndex(next.x, next.y))) {
-          this.bombPlan = null;
+          this.abortBombPlan(state.tick, 'next-tile-dangerous');
           this.currentPath = null;
           return { dir: null, action: null };
         }
@@ -164,16 +199,31 @@ export class BotAI {
 
     // phase === 'place-and-flee': bomb already placed, flee to hide
     if (myTile.x === plan.hidePos.x && myTile.y === plan.hidePos.y) {
-      // Arrived at hide spot
+      this.logger?.log('bot.bomb-plan-complete', {
+        tick: state.tick,
+        playerId: this.playerId,
+        data: { hidePos: plan.hidePos },
+      });
       this.bombPlan = null;
       return { dir: null, action: null };
     }
     const dir = directionToward(myTile, plan.hidePos, state.grid);
     if (!dir) {
-      this.bombPlan = null;
+      this.abortBombPlan(state.tick, 'no-flee-dir-postbomb');
       return { dir: null, action: null };
     }
     return { dir, action: null };
+  }
+
+  private abortBombPlan(tick: number, reason: string): void {
+    if (this.bombPlan) {
+      this.logger?.log('bot.bomb-plan-abort', {
+        tick,
+        playerId: this.playerId,
+        data: { reason, plan: this.bombPlan },
+      });
+    }
+    this.bombPlan = null;
   }
 
   // ─── Flee (always immediate) ─────────────────────────────────────────────────
@@ -219,6 +269,11 @@ export class BotAI {
         if (manhattanDistance(myTile, enemy.position) <= N) {
           this.mode = 'BATTLE';
           this.currentPath = null;
+          this.logger?.log('bot.mode-change', {
+            tick: state.tick,
+            playerId: this.playerId,
+            data: { from: 'EXPLORE', to: 'BATTLE', triggerEnemyId: enemy.id, distance: manhattanDistance(myTile, enemy.position), tile: myTile },
+          });
           return;
         }
       }
@@ -229,6 +284,11 @@ export class BotAI {
       if (allFar || enemies.length === 0) {
         this.mode = 'EXPLORE';
         this.currentPath = null;
+        this.logger?.log('bot.mode-change', {
+          tick: state.tick,
+          playerId: this.playerId,
+          data: { from: 'BATTLE', to: 'EXPLORE', remainingEnemies: enemies.length, tile: myTile },
+        });
       }
     }
   }
@@ -252,6 +312,11 @@ export class BotAI {
       if (plan) {
         this.bombPlan = plan;
         this.currentPath = null;
+        this.logger?.log('bot.bomb-plan-start', {
+          tick: state.tick,
+          playerId: this.playerId,
+          data: { context: 'EXPLORE', plan },
+        });
         return this.executeBombPlan(state, dangerMap, me, myTile);
       }
     }
@@ -304,6 +369,11 @@ export class BotAI {
       if (plan) {
         this.bombPlan = plan;
         this.currentPath = null;
+        this.logger?.log('bot.bomb-plan-start', {
+          tick: state.tick,
+          playerId: this.playerId,
+          data: { context: 'BATTLE', targetEnemyId: nearestEnemy.id, plan },
+        });
         return this.executeBombPlan(state, dangerMap, me, myTile);
       }
     }

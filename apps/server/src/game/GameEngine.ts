@@ -27,6 +27,7 @@ import type {
   Player,
 } from '@bombermp/shared';
 import { generateMap } from './mapGenerator.js';
+import type { ScopedLogger } from '../logging/event-log.js';
 
 const DT = SERVER_TICK_RATE_MS / 1000; // 0.05 s per tick
 const HALF = 0.45; // hitbox half-width in tile units
@@ -66,6 +67,7 @@ export class GameEngine {
     onTick: OnTickCallback,
     onGameOver: OnGameOverCallback,
     private readonly preTick?: () => void,
+    private readonly logger?: ScopedLogger,
   ) {
     this.onTick = onTick;
     this.onGameOver = onGameOver;
@@ -413,6 +415,19 @@ export class GameEngine {
     const statePlayer = this.state.players[playerId];
     if (statePlayer) statePlayer.activeBombs = sp.activeBombs;
 
+    this.logger?.log('bomb.place', {
+      tick: this.state.tick,
+      playerId,
+      data: {
+        bombId: bomb.id,
+        position: bomb.position,
+        blastRadius: bomb.blastRadius,
+        detonatesAt: bomb.detonatesAt,
+        activeBombs: sp.activeBombs,
+        maxBombs: sp.maxBombs,
+      },
+    });
+
     // Any other player whose hitbox already overlaps this tile must also be
     // able to walk off it — otherwise they get pinned against the new bomb.
     for (const [otherId, otherSp] of this.serverPlayers) {
@@ -441,6 +456,17 @@ export class GameEngine {
   private detonateBomb(bomb: Bomb, depth: number): void {
     if (depth > 8) return; // chain explosion safety cap
 
+    this.logger?.log(depth === 0 ? 'bomb.detonate' : 'bomb.chain', {
+      tick: this.state.tick,
+      playerId: bomb.ownerId,
+      data: {
+        bombId: bomb.id,
+        position: bomb.position,
+        blastRadius: bomb.blastRadius,
+        depth,
+      },
+    });
+
     // Remove bomb from state
     this.state.grid[toIndex(bomb.position.x, bomb.position.y)] = TileType.EMPTY;
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -461,6 +487,11 @@ export class GameEngine {
     // Destroy soft walls
     for (const pos of destroyedSoftWalls) {
       this.state.grid[toIndex(pos.x, pos.y)] = TileType.EMPTY;
+      this.logger?.log('wall.destroy', {
+        tick: this.state.tick,
+        playerId: bomb.ownerId,
+        data: { position: pos, byBombId: bomb.id },
+      });
     }
 
     // Mark explosion on all affected tiles
@@ -475,6 +506,16 @@ export class GameEngine {
       this.state.grid[toIndex(pos.x, pos.y)] = TileType.EXPLOSION;
     }
     this.state.explosions[explosion.id] = explosion;
+    this.logger?.log('explosion.create', {
+      tick: this.state.tick,
+      playerId: bomb.ownerId,
+      data: {
+        explosionId: explosion.id,
+        bombId: bomb.id,
+        tileCount: affectedTiles.length,
+        tiles: affectedTiles,
+      },
+    });
 
     // Maybe spawn items on destroyed soft walls (after marking EXPLOSION so item
     // tiles get EXPLOSION temporarily; updateExplosions will restore to ITEM)
@@ -494,6 +535,17 @@ export class GameEngine {
         serverP.alive = false;
         const statePlayer = this.state.players[playerId];
         if (statePlayer) statePlayer.alive = false;
+        this.logger?.log('player.death', {
+          tick: this.state.tick,
+          playerId,
+          data: {
+            position: { x: tx, y: ty },
+            cause: 'explosion',
+            bombId: bomb.id,
+            killerId: bomb.ownerId,
+            selfKill: bomb.ownerId === playerId,
+          },
+        });
       }
     }
 
@@ -546,6 +598,11 @@ export class GameEngine {
         sp.alive = false;
         const statePlayer = this.state.players[playerId];
         if (statePlayer) statePlayer.alive = false;
+        this.logger?.log('player.death', {
+          tick: this.state.tick,
+          playerId,
+          data: { position: { x: tx, y: ty }, cause: 'walked-into-flame' },
+        });
       }
     }
   }
@@ -564,6 +621,10 @@ export class GameEngine {
     }
     const item: Item = { id: uuidv4(), type, position: { x, y } };
     this.state.items[item.id] = item;
+    this.logger?.log('item.spawn', {
+      tick: this.state.tick,
+      data: { itemId: item.id, type, position: item.position },
+    });
     // Grid tile is EXPLOSION at this point; updateExplosions will set it to ITEM later
   }
 
@@ -596,6 +657,19 @@ export class GameEngine {
             }
             break;
         }
+
+        this.logger?.log('item.pickup', {
+          tick: this.state.tick,
+          playerId,
+          data: {
+            itemId,
+            type: item.type,
+            position: item.position,
+            maxBombs: sp.maxBombs,
+            blastRadius: sp.blastRadius,
+            speedMultiplier: sp.speedMultiplier,
+          },
+        });
 
         toRemove.push(itemId);
         if (this.state.grid[itemIdx] === TileType.ITEM) {

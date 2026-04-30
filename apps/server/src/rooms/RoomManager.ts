@@ -14,6 +14,7 @@ import { isDbEnabled } from '../db/connection.js';
 import { BotController } from '../bots/BotController.js';
 import { pickBotName } from '../bots/botNames.js';
 import { isBotDebugEnabled, botDebugRoom } from '../bots/debug.js';
+import { eventLog, type ScopedLogger } from '../logging/event-log.js';
 import type { Server } from 'socket.io';
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -36,6 +37,9 @@ interface ServerRoom {
   countdownEndsAt: number | null;
   engine: GameEngine | null;
   sessionId: string | null;
+  /** Local event-log session id (always set during IN_GAME, independent of DB). */
+  logSessionId: string | null;
+  logger: ScopedLogger | null;
 }
 
 export class RoomManager {
@@ -68,9 +72,16 @@ export class RoomManager {
       countdownEndsAt: null,
       engine: null,
       sessionId: null,
+      logSessionId: null,
+      logger: null,
     };
     room.players.set(playerId, { playerId, displayName, socketId, spawnIndex: 0, lateJoin: false });
     this.rooms.set(roomId, room);
+    eventLog.logUnscoped('room.create', {
+      roomId,
+      playerId,
+      data: { displayName, isPublic },
+    });
     return this.toRoomState(room);
   }
 
@@ -85,6 +96,9 @@ export class RoomManager {
       ? room.players.get(playerId)!.spawnIndex
       : this.assignSpawnIndex(room);
     room.players.set(playerId, { playerId, displayName, socketId, spawnIndex, lateJoin });
+    const evt = { roomId, playerId, data: { displayName, lateJoin, spawnIndex } };
+    if (room.logger) room.logger.log('room.join', evt);
+    else eventLog.logUnscoped('room.join', evt);
     return this.toRoomState(room);
   }
 
@@ -93,6 +107,8 @@ export class RoomManager {
     if (!room) throw new Error('Room not found');
     if (room.creatorId !== requesterId) throw new Error('Only the room creator can start the game');
     if (room.status !== RoomStatus.WAITING) throw new Error('Room is not in WAITING state');
+
+    eventLog.logUnscoped('room.start', { roomId, playerId: requesterId, data: { skipCountdown } });
 
     if (skipCountdown) {
       room.status = RoomStatus.STARTING;
@@ -115,6 +131,10 @@ export class RoomManager {
   leaveRoom(roomId: string, playerId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
+
+    const leaveEvt = { roomId, playerId };
+    if (room.logger) room.logger.log('room.leave', leaveEvt);
+    else eventLog.logUnscoped('room.leave', leaveEvt);
 
     room.engine?.removePlayer(playerId);
     room.players.delete(playerId);
@@ -159,6 +179,7 @@ export class RoomManager {
     if (!room) throw new Error('Room not found');
     if (room.creatorId !== requesterId) throw new Error('Only the room creator can configure the room');
     room.isPublic = isPublic;
+    eventLog.logUnscoped('room.configure', { roomId, playerId: requesterId, data: { isPublic } });
     this.io.to(roomId).emit('room:state', this.toRoomState(room));
   }
 
@@ -218,6 +239,24 @@ export class RoomManager {
 
     room.status = RoomStatus.IN_GAME;
 
+    // Local event-log session id (decoupled from DB session id).
+    const logSessionId = uuidv4();
+    room.logSessionId = logSessionId;
+    eventLog.startSession(logSessionId, room.roomId, allSlots.map((s) => ({
+      playerId: s.playerId,
+      displayName: s.displayName,
+      isBot: s.playerId.startsWith('bot-'),
+    })));
+    const logger = eventLog.createScopedLogger(room.roomId, logSessionId);
+    room.logger = logger;
+    logger.log('game.launch', {
+      data: {
+        humans: humanSlots.length,
+        bots: botSlots.length,
+        slots: allSlots.map((s) => ({ playerId: s.playerId, displayName: s.displayName, spawnIndex: s.spawnIndex })),
+      },
+    });
+
     // BotController is created lazily — it needs the engine reference, and
     // the engine needs the preTick callback. We solve this with a closure that
     // captures a mutable variable.
@@ -231,6 +270,7 @@ export class RoomManager {
       (diff) => { this.io.to(room.roomId).emit('game:tick', diff); },
       (winnerId) => { this.handleGameOver(room, winnerId); },
       preTick,
+      logger,
     );
 
     if (botSlots.length > 0) {
@@ -243,6 +283,7 @@ export class RoomManager {
         botSlots.map((s) => s.playerId),
         room.engine,
         debugEmitter,
+        logger,
       );
     }
 
@@ -269,6 +310,13 @@ export class RoomManager {
     room.status = RoomStatus.GAME_OVER;
     this.io.to(room.roomId).emit('game:over', { winnerId });
 
+    if (room.logger) {
+      room.logger.log('game.end', { data: { winnerId } });
+    }
+    if (room.logSessionId) {
+      eventLog.endSession(room.logSessionId, room.roomId, winnerId);
+    }
+
     // Update DB session (fire-and-forget; only when MongoDB is enabled)
     if (isDbEnabled() && room.sessionId) {
       GameSessionModel.findByIdAndUpdate(room.sessionId, {
@@ -285,6 +333,8 @@ export class RoomManager {
       room.status = RoomStatus.WAITING;
       room.engine = null;
       room.sessionId = null;
+      room.logSessionId = null;
+      room.logger = null;
       for (const p of room.players.values()) p.lateJoin = false;
       this.io.to(room.roomId).emit('room:state', this.toRoomState(room));
     }, 3000);
