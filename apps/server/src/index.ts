@@ -43,6 +43,7 @@ const roomManager = registerHandlers(io);
 // ─── Health (open CORS so any client deployment can ping) ─────────────────────
 
 app.get('/health', (_req, res) => {
+  res.removeHeader('Access-Control-Allow-Credentials');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.json({
     status: 'ok',
