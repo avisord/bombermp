@@ -14,7 +14,7 @@
 // Both server and client compare their *major* component on connect; minor
 // and patch can drift freely.
 
-export const GAME_VERSION = '1.0.4';
+export const GAME_VERSION = '1.0.5';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
