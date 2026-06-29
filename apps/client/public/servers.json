@@ -1,12 +1,7 @@
 [
   {
-    "slug": "asia-south1",
-    "name": "Asia South",
-    "url": "https://bombermp-server.onrender.com"
-  },
-  {
-    "slug": "asia-southeast1",
-    "name": "Singapore (Asia South East)",
+    "slug": "singapore",
+    "name": "Singapore",
     "url": "https://bombermp-server.onrender.com"
   }
 ]
