@@ -15,12 +15,13 @@ import { connectDB, disconnectDB } from './db/connection.js';
 import { registerHandlers } from './sockets/handlers.js';
 
 const PORT = process.env['PORT'] ? Number(process.env['PORT']) : 3001;
-const CLIENT_ORIGIN = process.env['CLIENT_ORIGIN'] ?? 'http://localhost:5173';
+const allowedOrigins = (process.env['CLIENT_ORIGIN'] ?? 'http://localhost:5173')
+  .split(',').map((o) => o.trim());
 
 // ─── Express ──────────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(cookieParser(process.env['COOKIE_SECRET'] ?? 'dev-secret'));
 app.use(express.json());
 
@@ -31,7 +32,7 @@ const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(
   httpServer,
   {
-    cors: { origin: CLIENT_ORIGIN, credentials: true },
+    cors: { origin: allowedOrigins, credentials: true },
     transports: ['websocket', 'polling'],
   },
 );
