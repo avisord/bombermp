@@ -483,9 +483,10 @@ function makeLobbyOptions(prefillRoomId?: string): ShowLobbyOptions {
     onRequestRoomList: () => { if (socket?.connected) socket.emit('room:list'); },
     onNameSave: setStoredDisplayName,
     onCustomize,
-    serverName: currentServerName ?? undefined,
     onServerChange: showServerSelectScreen,
   };
+  if (currentServerName) opts.serverName = currentServerName;
+  if (socket?.connected) opts.serverPingMs = rtt;
   if (prefillRoomId !== undefined) opts.prefillRoomId = prefillRoomId;
   return opts;
 }

@@ -56,6 +56,7 @@ export interface ShowLobbyOptions {
   onCustomize?: () => void;
   prefillRoomId?: string;
   serverName?: string;
+  serverPingMs?: number;
   onServerChange?: () => void;
 }
 
@@ -332,12 +333,14 @@ export function showServerSelect(root: HTMLElement, options: ShowServerSelectOpt
 
 // ─── HTML component helpers ───────────────────────────────────────────────────
 
-function logoHtml(): string {
+function logoHtml(pingMs?: number): string {
   const bombIcon = iconPath('hudBombIcon');
+  const pingLabel = Number.isFinite(pingMs) && (pingMs ?? 0) >= 0 ? `${Math.round(pingMs!)}ms` : '--';
   return `
     <div class="bmp-logo bmp-logo--sm">
       <img class="bmp-logo__bomb" src="${bombIcon}" alt="Bomb">
       <h1 class="bmp-logo__text">BomberMP</h1>
+      <span class="bmp-logo__ping" title="Current ping">Ping: ${pingLabel}</span>
     </div>
   `;
 }
@@ -431,7 +434,7 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
       <div class="bmp-dec bmp-dec--circle-yellow" aria-hidden="true"></div>
       <div class="bmp-dec bmp-dec--circle-pink"   aria-hidden="true"></div>
 
-      ${logoHtml()}
+      ${logoHtml(options.serverPingMs)}
       ${options.serverName ? `<button class="bmp-server-pill" id="server-change-btn">${escHtml(options.serverName)}</button>` : ''}
 
       <!-- Identity card: name (left) + avatar (right) -->
@@ -549,7 +552,7 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
   // ── Browse slide ────────────────────────────────────────────────────────────
   function renderBrowse(): void {
     root.innerHTML = `
-      ${logoHtml()}
+      ${logoHtml(options.serverPingMs)}
 
       ${cardHtml({
         headerClass: 'bmp-card__header--green',
@@ -648,7 +651,7 @@ export function showLobby(root: HTMLElement, options: ShowLobbyOptions): void {
   // ── Join private slide ──────────────────────────────────────────────────────
   function renderJoin(): void {
     root.innerHTML = `
-      ${logoHtml()}
+      ${logoHtml(options.serverPingMs)}
 
       ${cardHtml({
         headerClass: 'bmp-card__header--pink',
@@ -1099,6 +1102,19 @@ function injectStyles(): void {
       color: #1E293B;
       letter-spacing: -0.02em;
       line-height: 1;
+    }
+    .bmp-logo__ping {
+      margin-left: auto;
+      padding: 0.22rem 0.55rem;
+      border: 2px solid #1E293B;
+      border-radius: 999px;
+      background: #E2E8F0;
+      color: #334155;
+      font-family: 'Outfit', system-ui, sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
     }
     @keyframes bmp-wiggle {
       0%, 85%, 100% { transform: rotate(0deg); }
